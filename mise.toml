@@ -2,7 +2,6 @@
 java = "temurin-21"   # JDK for Gradle/AGP
 gradle = "9.8.0"      # only used to bootstrap the wrapper; builds use ./gradlew
 python = "3.14"       # tools/inspect_mtz.py (stdlib only)
-uv = "latest"         # tools/glyph_lab (numpy + pillow via `uv run --with`)
 
 [env]
 ANDROID_HOME = "{{env.HOME}}/Android/Sdk"
@@ -31,10 +30,6 @@ run = "./gradlew installDebug"
 description = "Install and launch on the connected device"
 depends = ["install"]
 run = "adb shell am start -n dev.abhay.hypericon/.MainActivity"
-
-[tasks.glyph-lab]
-description = "Run the glyph prototype: mise run glyph-lab <dump> <out> [packages...]"
-run = "uv run --quiet --with numpy --with pillow python tools/glyph_lab/simple.py"
 
 [tasks.inspect]
 run = "python tools/inspect_mtz.py"

@@ -65,6 +65,8 @@ fun MainScreen(viewModel: MainViewModel = viewModel()) {
                 state = state,
                 onStyleChange = viewModel::setIconStyle,
                 onAccentChange = viewModel::setAccent,
+                onSourceChange = viewModel::setColorSource,
+                onSeedChange = viewModel::setSeed,
                 onPreview = viewModel::preview,
             )
         },

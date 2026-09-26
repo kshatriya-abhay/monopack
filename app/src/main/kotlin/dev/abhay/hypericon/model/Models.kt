@@ -63,7 +63,21 @@ enum class IconStyle { LIGHT, DARK }
 
 enum class Accent { PRIMARY, SECONDARY, TERTIARY }
 
-data class Selection(val style: IconStyle, val accent: Accent)
+/** Where the icon colours come from. */
+enum class ColorSource {
+    /** The system's Material You palettes (from the wallpaper). */
+    WALLPAPER,
+
+    /** Palettes generated from a user-chosen seed (preset or custom hue). */
+    CUSTOM,
+}
+
+data class Selection(
+    val style: IconStyle,
+    val accent: Accent,
+    val source: ColorSource = ColorSource.WALLPAPER,
+    val seed: dev.abhay.hypericon.palette.Seed = dev.abhay.hypericon.palette.SeedPresets.DEFAULT,
+)
 
 /** Resolved icon colors: the plate behind the glyph and the glyph itself. */
 data class IconPalette(val background: Int, val foreground: Int)

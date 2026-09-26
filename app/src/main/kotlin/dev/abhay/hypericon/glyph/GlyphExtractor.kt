@@ -3,235 +3,229 @@ package dev.abhay.hypericon.glyph
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Matrix
-import android.graphics.Paint
 import android.graphics.drawable.AdaptiveIconDrawable
-import android.graphics.drawable.AnimatedVectorDrawable
-import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
-import android.graphics.drawable.DrawableContainer
-import android.graphics.drawable.DrawableWrapper
-import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.LayerDrawable
-import android.graphics.drawable.ShapeDrawable
-import android.graphics.drawable.VectorDrawable
 import androidx.core.graphics.createBitmap
-import dev.abhay.hypericon.glyph.MonoLevels.Fit
 import dev.abhay.hypericon.model.Glyph
 import dev.abhay.hypericon.model.GlyphSource
 import kotlin.math.max
+import kotlin.math.sqrt
 
 /**
- * Produces an alpha-only glyph for any app icon, on the 108dp adaptive-layer canvas.
+ * Produces an alpha-only glyph for any app icon, on the full 108dp adaptive-layer canvas (only the
+ * central 72dp is visible).
  *
  * - **Native monochrome layer** → used as-is.
- * - **Vector adaptive icon** (layers drawn from vectors/shapes/colours, so only a few exact
- *   colours): the glyph is every pixel whose colour differs from the background layer's colours.
- * - **Image icon** (bitmap layers, or a legacy icon with its own plate): the glyph is every pixel
- *   whose colour differs from the colours dominating the viewport edge. A legacy plate's
- *   anti-aliased rim is excluded; a free-form legacy logo (no plate) uses its silhouette.
- * - In both cases, if the result is really a plate carrying the logo, the plate's own colour is
- *   keyed out too; thin remnants are removed; and an implausible result falls back to the AOSP
- *   luminance method.
+ * - **Everything else** → exactly what Android 16 (QPR2) Launcher3 does for forced themed icons:
+ *   legacy icons are first wrapped into an adaptive icon on a white background
+ *   (`BaseIconFactory.wrapToAdaptiveIcon`), then `MonochromeIconFactory` flattens background and
+ *   foreground onto black, turns the gray level into alpha, stretches the contrast and flips it if
+ *   the edges (the background) would be opaque. No re-centring or re-scaling.
  *
- * Generated glyphs are then re-centred and scaled to a common size, so every themed icon is just
- * "glyph on our plate" and the only visible shape is the HyperOS squircle.
+ * Ported from AOSP `frameworks/libs/systemui/iconloaderlib` (Apache License 2.0).
  */
 object GlyphExtractor {
-    /** Visible viewport = central 2/3 of the layer (72dp of 108dp). */
-    private const val INSET_FRACTION = 1f / 6f
+    /** `AdaptiveIconDrawable.getExtraInsetFraction()`: the layer is 1 + 2×0.25 = 1.5× the viewport. */
+    private const val EXTRA_INSET = 0.25f
 
-    /**
-     * Generated glyphs are scaled so their longer side is this fraction of the viewport: the
-     * median size of the native monochrome glyphs measured on the test device (86 apps).
-     */
-    const val FORCED_GLYPH_TARGET = 0.66f
-    private const val MIN_SCALE = 0.5f
-    private const val MAX_SCALE = 2.5f
+    /** `BaseIconFactory.LEGACY_ICON_SCALE`: 0.7 of the viewport, as a fraction of the layer. */
+    private const val LEGACY_ICON_SCALE = 0.7f * (1f / (1 + 2 * EXTRA_INSET))
 
-    /** Mask level that counts as "part of the glyph" when measuring bounds. */
-    private const val BOUNDS_THRESHOLD = 40
+    /** Legacy icons are wrapped on white (`BaseIconFactory.DEFAULT_WRAPPER_BACKGROUND`). */
+    private const val WRAPPER_BACKGROUND = Color.WHITE
 
-    /** A keyed glyph covering more than this share of the viewport is a plate. */
-    private const val PLATE = 0.6f
-
-    /** Removing a plate must leave at least this much, otherwise the plate is kept. */
-    private const val MIN_AFTER_PLATE = 0.03f
-
-    /** Keyed glyphs outside this coverage range fall back to the luminance method. */
-    private const val MIN_COVERAGE = 0.015f
-    private const val MAX_COVERAGE = 0.7f
-
-    /** Background-layer colours covering at least this share of the viewport form its palette. */
-    private const val LAYER_COLOR_SHARE = 0.01f
-
-    private const val OPAQUE = 250
-    private const val RING_FRACTION = 0.04f
-    private const val NOISE_FLOOR = 24
+    // IconNormalizer constants.
+    private const val MAX_SQUARE_AREA_FACTOR = 375f / 576
+    private const val MAX_CIRCLE_AREA_FACTOR = 380f / 576
+    private const val CIRCLE_AREA_BY_RECT = (Math.PI / 4).toFloat()
+    private const val LINEAR_SCALE_SLOPE = (MAX_CIRCLE_AREA_FACTOR - MAX_SQUARE_AREA_FACTOR) / (1 - CIRCLE_AREA_BY_RECT)
+    private const val MIN_VISIBLE_ALPHA = 40
+    private const val BOUND_RATIO_MARGIN = 0.05f
+    private const val NORMALIZER_SIZE = 192
 
     fun extract(raw: Drawable, size: Int): Glyph = try {
         val adaptive = raw as? AdaptiveIconDrawable
         val mono = adaptive?.monochrome
         when {
             mono != null -> Glyph(drawAlpha(mono, size), GlyphSource.NATIVE_MONO)
-            adaptive != null -> forced(fromAdaptive(adaptive, size), size)
-            else -> forced(fromLegacy(raw, size), size)
+            adaptive != null -> forced(size) { canvas ->
+                adaptive.background?.drawAt(canvas, size)
+                adaptive.foreground?.drawAt(canvas, size)
+            }
+            else -> forced(size) { canvas -> drawWrappedLegacy(canvas, raw, size) }
         }
     } catch (e: Exception) {
-        emptyGlyph(size)
+        Glyph(createBitmap(size, size, Bitmap.Config.ALPHA_8), GlyphSource.FAILED)
     }
-
-    private fun inset(size: Int) = (size * INSET_FRACTION).toInt()
 
     private fun drawAlpha(drawable: Drawable, size: Int): Bitmap {
         val bitmap = createBitmap(size, size, Bitmap.Config.ALPHA_8)
-        drawable.setBounds(0, 0, size, size)
-        drawable.draw(Canvas(bitmap))
+        drawable.drawAt(Canvas(bitmap), size)
         return bitmap
     }
 
-    private fun fromAdaptive(icon: AdaptiveIconDrawable, size: Int): ByteArray {
-        val inset = inset(size)
-        val background = render(size, icon.background)
-        val argb = render(size, icon.background, icon.foreground)
-        val edge = edgePalette(argb, size, inset)
-
-        val isVector = icon.background.isVectorLike() && icon.foreground.isVectorLike()
-        val keyed = if (isVector) {
-            // A vector background has only a few exact colours: key those out.
-            val layer = ColorKey.dominantColors(viewportPixels(background, size, inset), LAYER_COLOR_SHARE)
-            unplate(argb, ColorKey.keyAlpha(argb, size, inset, layer), layer + edge, size, inset)
-        } else {
-            unplate(argb, ColorKey.keyAlpha(argb, size, inset, edge), edge, size, inset)
-        }
-        return finish(keyed, argb, size)
+    private fun Drawable.drawAt(canvas: Canvas, size: Int) {
+        setBounds(0, 0, size, size)
+        draw(canvas)
     }
 
-    private fun fromLegacy(icon: Drawable, size: Int): ByteArray {
-        val inset = inset(size)
-        val plain = createBitmap(size, size)
-        icon.setBounds(inset, inset, size - inset, size - inset)
-        icon.draw(Canvas(plain))
-        val argb = plain.pixels()
-
-        val opaque = BooleanArray(argb.size) { (argb[it] ushr 24) >= OPAQUE }
-        var opaqueInViewport = 0
-        for (y in inset until size - inset) for (x in inset until size - inset) if (opaque[y * size + x]) opaqueInViewport++
-        val side = size - 2 * inset
-        if (opaqueInViewport < PLATE * side * side) {
-            // Free-form logo without a plate: its silhouette is the glyph.
-            return finish(FloatArray(argb.size) { (argb[it] ushr 24) / 255f }, argb, size)
-        }
-
-        // The icon has its own plate: stay inside it, off its anti-aliased rim, and key out its colours.
-        var inner = opaque
-        repeat(max(1, size / 100)) { inner = ColorKey.erode(inner, size) }
-        val clipped = IntArray(argb.size) { if (inner[it]) argb[it] or (0xFF shl 24) else 0 }
-        val edge = edgePalette(clipped, size, inset)
-        return finish(unplate(clipped, ColorKey.keyAlpha(clipped, size, inset, edge), edge, size, inset), argb, size)
-    }
-
-    /** If the keyed glyph is really a plate carrying the logo, key out the plate's colour too. */
-    private fun unplate(argb: IntArray, alpha: FloatArray, palette: IntArray, size: Int, inset: Int): FloatArray {
-        if (ColorKey.coverage(alpha, size, inset) <= PLATE) return alpha
-        val plate = ColorKey.dominantColor(argb, alpha) ?: return alpha
-        val without = ColorKey.keyAlpha(argb, size, inset, palette + plate)
-        return if (ColorKey.coverage(without, size, inset) >= MIN_AFTER_PLATE) without else alpha
-    }
-
-    /**
-     * Opaque colours on the viewport edge, stepping inwards past transparent corners until at
-     * least a quarter of the ring is opaque, reduced to the dominant ones ([ColorKey.edgePalette]).
-     */
-    private fun edgePalette(argb: IntArray, size: Int, inset: Int): IntArray {
-        val step = max(2, size / 72)
-        var off = max(1, size / 216)
-        val half = (size - 2 * inset) / 2
-        while (off < half) {
-            val ring = ring(argb, size, inset + off, size - inset - 1 - off)
-            val opaque = ring.filter { (it ushr 24) >= OPAQUE }.map { it and 0xFFFFFF }.toIntArray()
-            if (opaque.size >= ring.size / 4) return ColorKey.edgePalette(opaque, ring.size)
-            off += step
-        }
-        return IntArray(0)
-    }
-
-    private fun ring(argb: IntArray, size: Int, a: Int, b: Int): IntArray = buildList {
-        for (x in a until b) add(argb[a * size + x])
-        for (y in a until b) add(argb[y * size + b])
-        for (x in b downTo a + 1) add(argb[b * size + x])
-        for (y in b downTo a + 1) add(argb[y * size + a])
-    }.toIntArray()
-
-    private fun viewportPixels(argb: IntArray, size: Int, inset: Int): IntArray {
-        val side = size - 2 * inset
-        return IntArray(side * side) { i -> argb[(inset + i / side) * size + inset + i % side] and 0xFFFFFF }
-    }
-
-    /** Draws the given layers over black, at full layer size. */
-    private fun render(size: Int, vararg layers: Drawable?): IntArray {
-        val bitmap = createBitmap(size, size)
-        val canvas = Canvas(bitmap)
+    /** `MonochromeIconFactory.wrap` + `generateMono`. */
+    private fun forced(size: Int, drawLayers: (Canvas) -> Unit): Glyph {
+        val flat = createBitmap(size, size)
+        val canvas = Canvas(flat)
         canvas.drawColor(Color.BLACK)
-        for (layer in layers) layer?.run { setBounds(0, 0, size, size); draw(canvas) }
-        return bitmap.pixels()
+        drawLayers(canvas)
+        val argb = IntArray(size * size).also { flat.getPixels(it, 0, size, 0, 0, size, size) }
+        flat.recycle()
+
+        val gray = MonoLevels.luminance(argb)
+        // A completely flat icon has no glyph (AOSP would leave it uniformly half-transparent).
+        if (gray.all { it == gray[0] }) return Glyph(createBitmap(size, size, Bitmap.Config.ALPHA_8), GlyphSource.FAILED)
+
+        // The edge bands are the part of the layer outside the launcher's icon bitmap: 1/8 of it.
+        val alpha = MonoLevels.aospMono(gray, size, max(1, size / 8))
+        val colors = IntArray(size * size) { (alpha[it].toInt() and 0xFF) shl 24 }
+        val source = Bitmap.createBitmap(colors, size, size, Bitmap.Config.ARGB_8888)
+        val out = source.extractAlpha()
+        source.recycle()
+        return Glyph(out, GlyphSource.FORCED_MONO)
     }
 
     /**
-     * Cleans the keyed alpha and turns it into a 0..255 mask, falling back to the luminance method
-     * when the glyph is implausibly small or large.
+     * `BaseIconFactory.wrapToAdaptiveIcon`: a white background with the legacy icon on top, either
+     * filling the mask (if the icon already has the mask's shape) or scaled to 70% of the viewport.
      */
-    private fun finish(alpha: FloatArray, argb: IntArray, size: Int): ByteArray {
-        val inset = inset(size)
-        val cleaned = ColorKey.open(alpha, size, max(1, size / 216))
-        if (ColorKey.coverage(cleaned, size, inset) in MIN_COVERAGE..MAX_COVERAGE) {
-            return ByteArray(size * size) { (cleaned[it] * 255).toInt().toByte() }
-        }
-        val flat = IntArray(argb.size) { i ->
-            // Composite onto black for the luminance fallback.
-            val c = argb[i]
-            val a = (c ushr 24) / 255f
-            val r = ((c shr 16 and 0xFF) * a).toInt()
-            val g = ((c shr 8 and 0xFF) * a).toInt()
-            val b = ((c and 0xFF) * a).toInt()
-            (0xFF shl 24) or (r shl 16) or (g shl 8) or b
-        }
-        val gray = MonoLevels.luminance(flat)
-        val ringWidth = (size * RING_FRACTION).toInt().coerceAtLeast(1)
-        return MonoLevels.denoise(MonoLevels.toGlyphMask(gray, size, inset, ringWidth), NOISE_FLOOR)
+    private fun drawWrappedLegacy(canvas: Canvas, icon: Drawable, size: Int) {
+        canvas.drawColor(WRAPPER_BACKGROUND)
+        val (scale, isShape) = normalize(icon)
+        val fraction = if (isShape) 1 - EXTRA_INSET else scale * LEGACY_ICON_SCALE
+
+        // createScaledDrawable: keep the aspect ratio, centred in the layer.
+        val w = icon.intrinsicWidth.toFloat()
+        val h = icon.intrinsicHeight.toFloat()
+        var fx = fraction
+        var fy = fraction
+        if (h > w && w > 0) fx *= w / h else if (w > h && h > 0) fy *= h / w
+        val left = size * (1 - fx) / 2
+        val top = size * (1 - fy) / 2
+        icon.setBounds(left.toInt(), top.toInt(), (size - left).toInt(), (size - top).toInt())
+        icon.draw(canvas)
     }
 
-    /** Normalizes a generated mask's position and size, and converts it to an ALPHA_8 bitmap. */
-    private fun forced(mask: ByteArray, size: Int): Glyph {
-        val box = MonoLevels.boundingBox(mask, size, BOUNDS_THRESHOLD) ?: return emptyGlyph(size)
-        val fit = MonoLevels.fitToTarget(box, size, inset(size), FORCED_GLYPH_TARGET, MIN_SCALE, MAX_SCALE)
-        return Glyph(mask.toAlphaBitmap(size, fit), GlyphSource.FORCED_MONO)
-    }
-
-    private fun emptyGlyph(size: Int) = Glyph(createBitmap(size, size, Bitmap.Config.ALPHA_8), GlyphSource.FAILED)
-
-    /** Vectors, shapes and flat colours (possibly wrapped) have only a few exact colours. */
-    private fun Drawable?.isVectorLike(): Boolean = when (this) {
-        null -> true
-        is VectorDrawable, is AnimatedVectorDrawable, is ColorDrawable, is GradientDrawable, is ShapeDrawable -> true
-        is DrawableWrapper -> drawable.isVectorLike()
-        is LayerDrawable -> (0 until numberOfLayers).all { getDrawable(it).isVectorLike() }
-        is DrawableContainer -> current.isVectorLike()
-        else -> false
-    }
-
-    private fun Bitmap.pixels(): IntArray = IntArray(width * height).also { getPixels(it, 0, width, 0, 0, width, height) }
-
-    private fun ByteArray.toAlphaBitmap(size: Int, fit: Fit): Bitmap {
-        val colors = IntArray(size * size) { i -> (this[i].toInt() and 0xFF) shl 24 }
-        val source = Bitmap.createBitmap(colors, size, size, Bitmap.Config.ARGB_8888)
-        val out = createBitmap(size, size, Bitmap.Config.ALPHA_8)
-        val matrix = Matrix().apply {
-            setScale(fit.scale, fit.scale)
-            postTranslate(fit.dx, fit.dy)
+    /**
+     * `IconNormalizer.getScale` with shape detection against the system icon mask: returns the
+     * scale that keeps the icon's visible area within Launcher3's limits, and whether the icon
+     * already has the mask's shape.
+     */
+    private fun normalize(icon: Drawable): Pair<Float, Boolean> {
+        val n = NORMALIZER_SIZE
+        var width = icon.intrinsicWidth
+        var height = icon.intrinsicHeight
+        if (width <= 0 || height <= 0) {
+            width = if (width <= 0 || width > n) n else width
+            height = if (height <= 0 || height > n) n else height
+        } else if (width > n || height > n) {
+            val m = max(width, height)
+            width = n * width / m
+            height = n * height / m
         }
-        Canvas(out).drawBitmap(source, matrix, Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG))
-        source.recycle()
-        return out
+        val bitmap = createBitmap(n, n, Bitmap.Config.ALPHA_8)
+        val canvas = Canvas(bitmap)
+        icon.setBounds(0, 0, width, height)
+        icon.draw(canvas)
+        val pixels = ByteArray(n * n)
+        bitmap.copyPixelsToBuffer(java.nio.ByteBuffer.wrap(pixels))
+
+        val leftBorder = FloatArray(height) { -1f }
+        val rightBorder = FloatArray(height) { -1f }
+        var topY = -1
+        var bottomY = -1
+        var leftX = n + 1
+        var rightX = -1
+        for (y in 0 until height) {
+            var firstX = -1
+            var lastX = -1
+            for (x in 0 until width) {
+                if ((pixels[y * n + x].toInt() and 0xFF) > MIN_VISIBLE_ALPHA) {
+                    if (firstX == -1) firstX = x
+                    lastX = x
+                }
+            }
+            leftBorder[y] = firstX.toFloat()
+            rightBorder[y] = lastX.toFloat()
+            if (firstX != -1) {
+                bottomY = y
+                if (topY == -1) topY = y
+                leftX = minOf(leftX, firstX)
+                rightX = max(rightX, lastX)
+            }
+        }
+        if (topY == -1 || rightX == -1) return 1f to false
+
+        convertToConvexArray(leftBorder, 1, topY, bottomY)
+        convertToConvexArray(rightBorder, -1, topY, bottomY)
+        var area = 0f
+        for (y in 0 until height) if (leftBorder[y] > -1) area += rightBorder[y] - leftBorder[y] + 1
+
+        val boundsW = rightX - leftX
+        val boundsH = bottomY - topY
+        val rectArea = ((boundsW + 1) * (boundsH + 1)).toFloat()
+        val scale = scaleFor(area, rectArea, (width * height).toFloat())
+        val isShape = isShape(leftX, topY, rightX, bottomY)
+        bitmap.recycle()
+        return scale to isShape
+    }
+
+    private fun scaleFor(hullArea: Float, boundingArea: Float, fullArea: Float): Float {
+        val hullByRect = hullArea / boundingArea
+        val scaleRequired = if (hullByRect < CIRCLE_AREA_BY_RECT) {
+            MAX_CIRCLE_AREA_FACTOR
+        } else {
+            MAX_SQUARE_AREA_FACTOR + LINEAR_SCALE_SLOPE * (1 - hullByRect)
+        }
+        val areaScale = hullArea / fullArea
+        return if (areaScale > scaleRequired) sqrt(scaleRequired / areaScale) else 1f
+    }
+
+    /**
+     * `IconNormalizer.isShape` against the system mask. HyperOS sets `config_icon_mask` to a
+     * square, so nothing can lie outside it and the test reduces to "the icon's visible bounds
+     * are square (within 5%)".
+     */
+    private fun isShape(left: Int, top: Int, right: Int, bottom: Int): Boolean {
+        val w = right - left
+        val h = bottom - top
+        return w > 0 && h > 0 && kotlin.math.abs(w.toFloat() / h - 1) <= BOUND_RATIO_MARGIN
+    }
+
+    /** `IconNormalizer.convertToConvexArray`: turns row borders into a convex outline. */
+    private fun convertToConvexArray(xs: FloatArray, direction: Int, topY: Int, bottomY: Int) {
+        val angles = FloatArray(max(1, xs.size - 1))
+        val first = topY
+        var last = -1
+        var lastAngle = Float.MAX_VALUE
+        for (i in topY + 1..bottomY) {
+            if (xs[i] <= -1) continue
+            var start: Int
+            if (lastAngle == Float.MAX_VALUE) {
+                start = first
+            } else {
+                var currentAngle = (xs[i] - xs[last]) / (i - last)
+                start = last
+                if ((currentAngle - lastAngle) * direction < 0) {
+                    while (start > first) {
+                        start--
+                        currentAngle = (xs[i] - xs[start]) / (i - start)
+                        if ((currentAngle - angles[start]) * direction >= 0) break
+                    }
+                }
+            }
+            lastAngle = (xs[i] - xs[start]) / (i - start)
+            for (j in start until i) {
+                angles[j] = lastAngle
+                xs[j] = xs[start] + lastAngle * (j - start)
+            }
+            last = i
+        }
     }
 }

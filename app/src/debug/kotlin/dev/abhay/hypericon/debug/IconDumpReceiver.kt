@@ -7,7 +7,7 @@ import kotlin.concurrent.thread
 
 /**
  * Debug-only trigger for [IconDumper]. On HyperOS it's only delivered while the app is running
- * (or has Autostart permission); the instrumentation route in tools/glyph_lab/README.md always works.
+ * (or has Autostart permission); the instrumentation route in tools/icon_dump/README.md always works.
  *
  * adb shell am broadcast -n dev.abhay.hypericon/.debug.IconDumpReceiver [--es packages a.b,c.d]
  */

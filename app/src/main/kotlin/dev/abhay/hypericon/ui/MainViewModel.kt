@@ -16,6 +16,7 @@ import androidx.lifecycle.viewModelScope
 import dev.abhay.hypericon.appContainer
 import dev.abhay.hypericon.glyph.GlyphExtractor
 import dev.abhay.hypericon.model.Accent
+import dev.abhay.hypericon.model.ColorSource
 import dev.abhay.hypericon.model.Glyph
 import dev.abhay.hypericon.model.GlyphSource
 import dev.abhay.hypericon.model.IconInfo
@@ -24,6 +25,7 @@ import dev.abhay.hypericon.model.IconPalette
 import dev.abhay.hypericon.model.IconStyle
 import dev.abhay.hypericon.model.LauncherApp
 import dev.abhay.hypericon.model.Selection
+import dev.abhay.hypericon.palette.Seed
 import dev.abhay.hypericon.render.HyperOsIconShape
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -53,7 +55,10 @@ data class UiState(
     val scanning: Boolean = true,
     val items: List<DrawerItem> = emptyList(),
     val error: String? = null,
+    /** The system's wallpaper-derived palettes. */
     val palettes: Map<Accent, Map<IconStyle, IconPalette>> = emptyMap(),
+    /** Palettes generated from the pending custom seed. */
+    val customPalettes: Map<Accent, Map<IconStyle, IconPalette>> = emptyMap(),
     /** What the controls show. */
     val pending: Selection = Selection(IconStyle.LIGHT, Accent.PRIMARY),
     /** What the grid shows; null until the first Preview. */
@@ -65,7 +70,10 @@ data class UiState(
     val loaded: Int get() = items.count { it.glyph != null }
     val fetchProgress: Float get() = if (total == 0) (if (scanning) 0f else 1f) else loaded.toFloat() / total
     val iconsReady: Boolean get() = !scanning && loaded == total
-    val pendingPalette: IconPalette? get() = palettes[pending.accent]?.get(pending.style)
+    /** The palettes the controls currently draw from (wallpaper or custom seed). */
+    val activePalettes: Map<Accent, Map<IconStyle, IconPalette>>
+        get() = if (pending.source == ColorSource.CUSTOM) customPalettes else palettes
+    val pendingPalette: IconPalette? get() = activePalettes[pending.accent]?.get(pending.style)
     val previewEnabled: Boolean get() = isPreviewEnabled(iconsReady, pendingPalette, committedPalette)
     fun count(source: GlyphSource) = items.count { it.glyph?.source == source }
 }
@@ -91,10 +99,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val density = application.resources.displayMetrics.density
 
     private val _state = MutableStateFlow(
-        UiState(
-            palettes = paletteProvider.load(),
-            pending = Selection(style = systemIconStyle(application), accent = Accent.PRIMARY),
-        ),
+        Selection(style = systemIconStyle(application), accent = Accent.PRIMARY).let { pending ->
+            UiState(palettes = paletteProvider.load(), customPalettes = pending.seed.palettes(), pending = pending)
+        },
     )
     val state: StateFlow<UiState> = _state.asStateFlow()
 
@@ -108,6 +115,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setIconStyle(style: IconStyle) = _state.update { it.copy(pending = it.pending.copy(style = style)) }
 
     fun setAccent(accent: Accent) = _state.update { it.copy(pending = it.pending.copy(accent = accent)) }
+
+    fun setColorSource(source: ColorSource) = _state.update { it.copy(pending = it.pending.copy(source = source)) }
+
+    /** Picks a preset or custom seed (and switches the source to Custom). */
+    fun setSeed(seed: Seed) = _state.update {
+        it.copy(
+            pending = it.pending.copy(source = ColorSource.CUSTOM, seed = seed),
+            customPalettes = if (seed == it.pending.seed) it.customPalettes else seed.palettes(),
+        )
+    }
 
     fun preview() = _state.update {
         if (!it.previewEnabled) it else it.copy(committed = it.pending, committedPalette = it.pendingPalette)

@@ -15,7 +15,7 @@ import java.io.File
 /**
  * Debug-only: writes each app's raw icon layers and generated glyph to
  * `/sdcard/Android/data/dev.abhay.hypericon/files/icon-dump/<package>/` for offline analysis
- * (see tools/glyph_lab).
+ * (see tools/icon_dump).
  */
 object IconDumper {
     private const val TAG = "IconDump"

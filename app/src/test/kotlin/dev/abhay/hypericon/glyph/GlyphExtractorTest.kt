@@ -48,7 +48,7 @@ class GlyphExtractorTest {
     }
 
     @Test
-    fun `adaptive icon without mono keeps only the logo, not the plate`() {
+    fun `adaptive icon without mono keeps the logo and drops a light plate`() {
         // White plate with a dark blue logo: the plate must become transparent.
         val icon = AdaptiveIconDrawable(ColorDrawable(Color.WHITE), square(0xFF102060.toInt(), 0.25f))
 
@@ -61,17 +61,16 @@ class GlyphExtractorTest {
     }
 
     @Test
-    fun `forced glyphs are normalized to the target size`() {
+    fun `forced glyphs keep the icon's own size (no re-scaling, like AOSP)`() {
         val small = GlyphExtractor.extract(AdaptiveIconDrawable(ColorDrawable(Color.BLACK), square(Color.WHITE, 0.2f)), size)
         val large = GlyphExtractor.extract(AdaptiveIconDrawable(ColorDrawable(Color.BLACK), square(Color.WHITE, 0.45f)), size)
 
-        val expected = GlyphExtractor.FORCED_GLYPH_TARGET * size * 2 / 3
-        assertThat(opaqueWidth(small.mask).toFloat()).isWithin(6f).of(expected)
-        assertThat(opaqueWidth(large.mask).toFloat()).isWithin(6f).of(expected)
+        assertThat(opaqueWidth(small.mask).toFloat()).isWithin(3f).of(0.2f * size)
+        assertThat(opaqueWidth(large.mask).toFloat()).isWithin(3f).of(0.45f * size)
     }
 
     @Test
-    fun `legacy icon with its own round plate yields the inner logo, not the circle`() {
+    fun `mask-shaped legacy icon fills the viewport on white and its plate becomes the glyph`() {
         val legacy = legacyBitmap { canvas, px ->
             canvas.drawOval(0f, 0f, px.toFloat(), px.toFloat(), Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFE53935.toInt() })
             val s = px * 0.35f
@@ -81,25 +80,25 @@ class GlyphExtractorTest {
         val glyph = GlyphExtractor.extract(legacy, size)
 
         assertThat(glyph.source).isEqualTo(GlyphSource.FORCED_MONO)
-        assertThat(alphaAt(glyph.mask, center, center)).isGreaterThan(200)
-        // The glyph must be the (normalized) white square, not the circle: a point near the
-        // square's corner is inside the square but would lie outside a circle of the same width.
-        val half = (GlyphExtractor.FORCED_GLYPH_TARGET * size * 2 / 3 / 2).toInt()
-        val nearCorner = center + (half * 0.85f).toInt()
-        assertThat(alphaAt(glyph.mask, nearCorner, nearCorner)).isGreaterThan(200)
+        // Circle (full-bleed: 75% of the layer) is opaque; the white square inside is a hole.
+        assertThat(alphaAt(glyph.mask, center, center)).isLessThan(30)
+        assertThat(alphaAt(glyph.mask, center + size / 4, center)).isGreaterThan(200)
+        // Outside the circle is the white wrapper background: transparent.
+        assertThat(alphaAt(glyph.mask, size / 6 + 4, size / 6 + 4)).isLessThan(30)
     }
 
     @Test
-    fun `free-form legacy logo uses its silhouette`() {
-        val legacy = legacyBitmap { canvas, px ->
-            canvas.drawOval(px * 0.3f, px * 0.3f, px * 0.7f, px * 0.7f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF43A047.toInt() })
-        }
+    fun `non-square legacy icon is scaled to 70 percent of the viewport`() {
+        val wide = BitmapDrawable(
+            RuntimeEnvironment.getApplication().resources,
+            createBitmap(192, 96).apply { eraseColor(0xFF1565C0.toInt()) },
+        )
 
-        val glyph = GlyphExtractor.extract(legacy, size)
+        val glyph = GlyphExtractor.extract(wide, size)
 
-        assertThat(glyph.source).isEqualTo(GlyphSource.FORCED_MONO)
-        assertThat(alphaAt(glyph.mask, center, center)).isGreaterThan(200)
-        assertThat(alphaAt(glyph.mask, size / 6 + 4, size / 6 + 4)).isEqualTo(0)
+        // IconNormalizer: a full rectangle is limited to 375/576 of the area → scale √(375/576).
+        val expected = kotlin.math.sqrt(375f / 576) * 0.7f / 1.5f * size
+        assertThat(opaqueWidth(glyph.mask).toFloat()).isWithin(4f).of(expected)
     }
 
     @Test
