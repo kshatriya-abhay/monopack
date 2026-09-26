@@ -1,0 +1,7 @@
+<resources>
+    <!-- Compose draws everything; this only covers the window before the first frame. -->
+    <style name="Theme.HyperIcon" parent="android:Theme.DeviceDefault.DayNight">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>
