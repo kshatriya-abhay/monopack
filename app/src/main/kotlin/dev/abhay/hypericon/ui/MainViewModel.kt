@@ -11,6 +11,7 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.abhay.hypericon.appContainer
 import dev.abhay.hypericon.apps.AppSource
+import dev.abhay.hypericon.data.LastTheme
 import dev.abhay.hypericon.data.SavedSelections
 import dev.abhay.hypericon.data.SelectionStore
 import dev.abhay.hypericon.export.ExportApp
@@ -36,6 +37,7 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -61,6 +63,8 @@ data class ExportOptions(
 /** One exported theme file. */
 data class ExportedFile(
     val style: IconStyle,
+    /** Theme title, e.g. "HyperIcon · Primary · Light". */
+    val title: String,
     val fileName: String,
     /** Human-readable location, e.g. "Download/HyperIcon/…mtz". */
     val location: String,
@@ -81,7 +85,7 @@ sealed interface ExportState {
 }
 
 /** Which apps the grid shows. */
-enum class GridFilter { ALL, NATIVE, GENERATED }
+enum class GridFilter { ALL, NATIVE, GENERATED, EDITED }
 
 data class UiState(
     val scanning: Boolean = true,
@@ -107,13 +111,16 @@ data class UiState(
      * style's pair ([committedPairs]).
      */
     val committedOppositePalette: IconPalette? = null,
-    /** Per-app icon edits (keys of [DrawerItem.app]); session only. */
+    /** Per-app icon edits (keys of [DrawerItem.app]); saved, and kept for uninstalled apps. */
     val edits: Map<String, IconEdit> = emptyMap(),
     /** The app whose icon is open in the icon editor, or null. */
     val editorTarget: String? = null,
     /** Apps selected with long-press; non-empty means selection mode. */
     val selected: Set<String> = emptySet(),
     val export: ExportState = ExportState.Idle,
+    /** The theme file Reapply uses, and whether it still exists. */
+    val lastTheme: LastTheme? = null,
+    val lastThemeAvailable: Boolean = false,
 ) {
     /** Export needs a preview (so what you export is what you saw) and all icons loaded. */
     val exportEnabled: Boolean get() = committed != null && committedPalette != null && iconsReady && export !is ExportState.Running
@@ -150,11 +157,15 @@ data class UiState(
     val previewEnabled: Boolean get() = isPreviewEnabled(iconsReady, pendingPalette, committedPalette)
     fun count(source: GlyphSource) = items.count { it.glyph?.source == source }
 
+    /** Installed apps with an edit (edits of uninstalled apps are kept but not counted). */
+    val editedCount: Int get() = items.count { it.app.key in edits }
+
     val visibleItems: List<DrawerItem>
         get() = when (filter) {
             GridFilter.ALL -> items
             GridFilter.NATIVE -> items.filter { it.glyph?.source == GlyphSource.NATIVE_MONO }
             GridFilter.GENERATED -> items.filter { it.glyph != null && it.glyph.source != GlyphSource.NATIVE_MONO }
+            GridFilter.EDITED -> items.filter { it.app.key in edits }
         }
 }
 
@@ -177,6 +188,8 @@ class MainViewModel(
     private val detailPx: Int,
     /** Size of the editor's large preview in pixels. */
     private val editorIconPx: Int = detailPx,
+    /** Whether an exported file still exists (the user may delete it from Downloads). */
+    private val fileExists: (String) -> Boolean = { File(it).exists() },
     private val loadDispatcher: CoroutineDispatcher = Dispatchers.Default.limitedParallelism(4),
     private val workDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
@@ -199,8 +212,13 @@ class MainViewModel(
     /** Set once the saved selection has been applied (or found missing), or the user changed something. */
     private var selectionSettled = false
 
+    /** Completed once saved edits have been merged into the state, so saving never drops them. */
+    private val editsRestored = CompletableDeferred<Unit>()
+
     init {
         viewModelScope.launch { restore() }
+        viewModelScope.launch { restoreEdits() }
+        viewModelScope.launch { restoreLastTheme() }
         refresh()
     }
 
@@ -235,16 +253,25 @@ class MainViewModel(
 
     fun closeEditor() = _state.update { it.copy(editorTarget = null) }
 
-    /** Saves [edit] for [key] (session only) and closes the editor. */
-    fun saveEdit(key: String, edit: IconEdit) = _state.update {
-        it.copy(edits = it.edits + (key to edit), editorTarget = null)
-    }
+    /** Saves [edit] for [key] and closes the editor. */
+    fun saveEdit(key: String, edit: IconEdit) = changeEdits { it.copy(edits = it.edits + (key to edit), editorTarget = null) }
 
     /** Removes the edit for [key], so it follows the global icon style again, and closes the editor. */
-    fun resetEdit(key: String) = _state.update { it.copy(edits = it.edits - key, editorTarget = null) }
+    fun resetEdit(key: String) = changeEdits { it.copy(edits = it.edits - key, editorTarget = null) }
 
     /** Removes the edits of every selected app and leaves selection mode. */
-    fun resetSelectedEdits() = _state.update { it.copy(edits = it.edits - it.selected, selected = emptySet()) }
+    fun resetSelectedEdits() = changeEdits { it.copy(edits = it.edits - it.selected, selected = emptySet()) }
+
+    /** Applies an edits change, leaves an emptied Edited filter, and saves the edits. */
+    private fun changeEdits(change: (UiState) -> UiState) {
+        _state.update { s ->
+            change(s).let { if (it.filter == GridFilter.EDITED && it.editedCount == 0) it.copy(filter = GridFilter.ALL) else it }
+        }
+        viewModelScope.launch {
+            editsRestored.await()
+            runCatching { store.saveEdits(_state.value.edits) }.onFailure { Log.w(TAG, "Saving edits failed", it) }
+        }
+    }
 
     /** A glyph for the editor's large preview, sharper than the grid's (null if it fails). */
     suspend fun loadEditorGlyph(app: LauncherApp): ImageBitmap? =
@@ -329,9 +356,12 @@ class MainViewModel(
                         _state.update { it.copy(export = ExportState.Running(done, total, index + 1, requests.size)) }
                     }
                     val saved = saver.save(file)
-                    ExportedFile(style, file.name, saved.displayPath, saved.uri, saved.absolutePath, file.path, request.apps.size)
+                    ExportedFile(style, request.title, file.name, saved.displayPath, saved.uri, saved.absolutePath, file.path, request.apps.size)
                 }
                 _state.update { it.copy(export = ExportState.Done(files)) }
+                // Until one is applied, Reapply uses the new export (the previewed style's file for Both).
+                val newest = files.firstOrNull { it.style == committed.style } ?: files.first()
+                setLastTheme(LastTheme(newest.title, newest.style, newest.absolutePath))
             } catch (e: CancellationException) {
                 _state.update { it.copy(export = ExportState.Idle) }
                 throw e
@@ -359,10 +389,32 @@ class MainViewModel(
 
     fun dismissExport() = _state.update { it.copy(export = ExportState.Idle) }
 
+    /** Apply icons was tapped for [file]: it becomes the theme Reapply uses. */
+    fun onThemeApplied(file: ExportedFile) = setLastTheme(LastTheme(file.title, file.style, file.absolutePath))
+
+    private fun setLastTheme(theme: LastTheme) {
+        _state.update { it.copy(lastTheme = theme, lastThemeAvailable = fileExists(theme.absolutePath)) }
+        viewModelScope.launch {
+            runCatching { store.saveLastTheme(theme) }.onFailure { Log.w(TAG, "Saving the last theme failed", it) }
+        }
+    }
+
+    private suspend fun restoreLastTheme() {
+        val theme = runCatching { store.loadLastTheme() }.getOrNull() ?: return
+        // An export or apply during startup is newer than the saved one.
+        _state.update { if (it.lastTheme != null) it else it.copy(lastTheme = theme, lastThemeAvailable = fileExists(theme.absolutePath)) }
+    }
+
     /** Called on every resume: refreshes wallpaper colors and picks up app changes. */
     fun onResume() {
         val system = palettes.load()
-        _state.update { it.copy(palettes = system, paletteLooksDefault = DefaultPalette.looksDefault(system)) }
+        _state.update { s ->
+            s.copy(
+                palettes = system,
+                paletteLooksDefault = DefaultPalette.looksDefault(system),
+                lastThemeAvailable = s.lastTheme?.let { fileExists(it.absolutePath) } ?: false,
+            )
+        }
         if (fetchJob?.isActive == true) return
         refresh()
     }
@@ -381,7 +433,9 @@ class MainViewModel(
         selectionSettled = true
         _state.update(change)
         val s = _state.value
-        viewModelScope.launch { store.save(SavedSelections(s.pending, s.committed, s.committedPalette)) }
+        viewModelScope.launch {
+            store.save(SavedSelections(s.pending, s.committed, s.committedPalette, s.committedOppositePalette))
+        }
     }
 
     private suspend fun restore() {
@@ -393,7 +447,8 @@ class MainViewModel(
         selectionSettled = true
         val customPalettes = withContext(workDispatcher) { saved.pending.seed.palettes() }
         val committed = saved.committed
-        val oppositePalette = committed?.let { c ->
+        // Saved since 3a; older saves recompute it from the current palettes.
+        val oppositePalette = saved.committedOppositePalette ?: committed?.let { c ->
             val source = if (c.source == ColorSource.CUSTOM) withContext(workDispatcher) { c.seed.palettes() } else _state.value.palettes
             source[c.accent]?.get(c.style.opposite())
         }
@@ -405,6 +460,16 @@ class MainViewModel(
                 committedPalette = saved.committedPalette,
                 committedOppositePalette = oppositePalette,
             )
+        }
+    }
+
+    /** Merges saved edits into the state; edits made meanwhile win. */
+    private suspend fun restoreEdits() {
+        try {
+            val saved = runCatching { store.loadEdits() }.onFailure { Log.w(TAG, "Loading edits failed", it) }.getOrNull()
+            if (!saved.isNullOrEmpty()) _state.update { it.copy(edits = saved + it.edits) }
+        } finally {
+            editsRestored.complete(Unit)
         }
     }
 

@@ -120,6 +120,8 @@ fun ExportDialogs(
     onCancel: () -> Unit,
     onDismiss: () -> Unit,
     onSaveCopy: (ExportedFile, String, (Boolean) -> Unit) -> Unit,
+    /** Apply icons was started for this file (it becomes the Reapply target). */
+    onApplied: (ExportedFile) -> Unit = {},
 ) {
     val context = LocalContext.current
     var saving by remember { mutableStateOf<ExportedFile?>(null) }
@@ -173,7 +175,9 @@ fun ExportDialogs(
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = {
-                            if (!ThemeApplier.apply(context, file.absolutePath)) {
+                            if (ThemeApplier.apply(context, file.absolutePath)) {
+                                onApplied(file)
+                            } else {
                                 Toast.makeText(context, "Theme Manager isn't available", Toast.LENGTH_SHORT).show()
                             }
                         }) { Text("Apply icons") }

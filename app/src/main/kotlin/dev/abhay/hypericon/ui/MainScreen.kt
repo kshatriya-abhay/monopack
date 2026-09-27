@@ -1,5 +1,6 @@
 package dev.abhay.hypericon.ui
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -33,11 +34,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import dev.abhay.hypericon.export.ThemeApplier
 import dev.abhay.hypericon.model.ColorSource
 import dev.abhay.hypericon.model.GlyphSource
 
@@ -45,6 +48,7 @@ import dev.abhay.hypericon.model.GlyphSource
 @Composable
 fun MainScreen(viewModel: MainViewModel = viewModel(factory = MainViewModel.Factory)) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     /** The app whose details sheet is open. */
     var detailsItem by remember { mutableStateOf<DrawerItem?>(null) }
     var exportOptions by remember { mutableStateOf<ExportOptions?>(null) }
@@ -78,6 +82,15 @@ fun MainScreen(viewModel: MainViewModel = viewModel(factory = MainViewModel.Fact
                         TopAppBar(
                             title = { Text("HyperIcon") },
                             actions = {
+                                // HyperOS sometimes drops applied icons; this re-applies the last theme in one tap.
+                                val lastTheme = state.lastTheme
+                                if (lastTheme != null && state.lastThemeAvailable) {
+                                    TextButton(onClick = {
+                                        val applied = ThemeApplier.apply(context, lastTheme.absolutePath)
+                                        val message = if (applied) "Reapplying ${lastTheme.title}" else "Theme Manager isn't available"
+                                        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                                    }) { Text("Reapply") }
+                                }
                                 TextButton(onClick = viewModel::refresh, enabled = state.iconsReady) { Text("Refresh") }
                                 TextButton(onClick = { exportOptions = viewModel.defaultExportOptions() }, enabled = state.exportEnabled) {
                                     Text("Export")
@@ -120,6 +133,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel(factory = MainViewModel.Fact
                     items = state.visibleItems,
                     colorsFor = { item -> if (!previewed) null else state.paletteFor(item.app.key)?.toIconColors() },
                     contrastFor = { item -> if (!previewed) 0 else state.edits[item.app.key]?.contrast ?: 0 },
+                    edited = state.edits.keys,
                     header = GridHeader(
                         previewed = previewed,
                         filter = state.filter,
@@ -127,6 +141,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel(factory = MainViewModel.Fact
                             GridFilter.ALL to state.total,
                             GridFilter.NATIVE to state.count(GlyphSource.NATIVE_MONO),
                             GridFilter.GENERATED to state.total - state.count(GlyphSource.NATIVE_MONO),
+                            GridFilter.EDITED to state.editedCount,
                         ),
                         showCountsReady = state.iconsReady,
                         showDefaultPaletteBanner = state.paletteLooksDefault &&
@@ -189,6 +204,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel(factory = MainViewModel.Fact
         onCancel = viewModel::cancelExport,
         onDismiss = viewModel::dismissExport,
         onSaveCopy = viewModel::saveCopy,
+        onApplied = viewModel::onThemeApplied,
     )
 
     detailsItem?.let { item ->

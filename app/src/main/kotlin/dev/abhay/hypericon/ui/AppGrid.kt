@@ -7,6 +7,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +26,7 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -74,6 +76,8 @@ fun AppGrid(
     colorsFor: (DrawerItem) -> IconColors?,
     /** Glyph contrast edit (0..100) per item. */
     contrastFor: (DrawerItem) -> Int = { 0 },
+    /** Apps with an icon edit get the Edited marker. */
+    edited: Set<String> = emptySet(),
     header: GridHeader,
     contentPadding: PaddingValues,
     selected: Set<String>,
@@ -147,7 +151,7 @@ fun AppGrid(
                 val key = item.app.key
                 val itemColors = colorsFor(item)
                 Crossfade(targetState = itemColors, label = "icon") { current ->
-                    GridIcon(item, current, contrastFor(item), selected = key in selected)
+                    GridIcon(item, current, contrastFor(item), edited = key in edited, selected = key in selected)
                 }
                 Spacer(Modifier.height(6.dp))
                 Text(
@@ -164,7 +168,7 @@ fun AppGrid(
 }
 
 @Composable
-private fun GridIcon(item: DrawerItem, colors: IconColors?, contrast: Int, selected: Boolean) {
+private fun GridIcon(item: DrawerItem, colors: IconColors?, contrast: Int, edited: Boolean, selected: Boolean) {
     val scale by animateFloatAsState(if (selected) 0.86f else 1f, label = "select")
     Box(Modifier.size(MainViewModel.GRID_ICON_DP.dp)) {
         val original = item.original
@@ -178,6 +182,7 @@ private fun GridIcon(item: DrawerItem, colors: IconColors?, contrast: Int, selec
                 if (item.glyph.source != GlyphSource.NATIVE_MONO) {
                     GeneratedBadge(Modifier.align(Alignment.TopEnd))
                 }
+                if (edited) EditedBadge(Modifier.align(Alignment.BottomStart))
                 if (selected) SelectedMark(Modifier.align(Alignment.BottomEnd))
             }
             original != null -> Image(
@@ -213,6 +218,24 @@ private fun SelectedMark(modifier: Modifier) {
     }
 }
 
+/** Marks icons with an icon edit: a small pencil on a surface-coloured disc. */
+@Composable
+private fun EditedBadge(modifier: Modifier) {
+    val disc = MaterialTheme.colorScheme.surface
+    val pencil = MaterialTheme.colorScheme.primary
+    Canvas(
+        modifier
+            .size(16.dp)
+            .semantics { contentDescription = "Edited icon" },
+    ) {
+        drawCircle(disc)
+        val stroke = 1.8.dp.toPx()
+        // Pencil body from top-right to bottom-left, with a short tip line.
+        drawLine(pencil, Offset(size.width * 0.68f, size.height * 0.30f), Offset(size.width * 0.36f, size.height * 0.62f), stroke * 1.6f, StrokeCap.Round)
+        drawLine(pencil, Offset(size.width * 0.30f, size.height * 0.70f), Offset(size.width * 0.28f, size.height * 0.72f), stroke, StrokeCap.Round)
+    }
+}
+
 /** Marks icons whose glyph was generated rather than supplied by the app. */
 @Composable
 private fun GeneratedBadge(modifier: Modifier) {
@@ -243,9 +266,9 @@ data class GridHeader(
 private fun FilterRow(header: GridHeader) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp),
     ) {
-        GridFilter.entries.forEach { filter ->
+        GridFilter.entries.filter { it != GridFilter.EDITED || (header.counts[it] ?: 0) > 0 || header.filter == it }.forEach { filter ->
             FilterChip(
                 selected = header.filter == filter,
                 onClick = { header.onFilterChange(filter) },
@@ -260,6 +283,7 @@ private val GridFilter.label
         GridFilter.ALL -> "All"
         GridFilter.NATIVE -> "Native"
         GridFilter.GENERATED -> "Generated"
+        GridFilter.EDITED -> "Edited"
     }
 
 @Composable

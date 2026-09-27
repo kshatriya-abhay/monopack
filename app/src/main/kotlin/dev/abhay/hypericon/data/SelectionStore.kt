@@ -10,12 +10,14 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dev.abhay.hypericon.model.Accent
 import dev.abhay.hypericon.model.ColorSource
+import dev.abhay.hypericon.model.IconEdit
 import dev.abhay.hypericon.model.IconPalette
 import dev.abhay.hypericon.model.IconStyle
 import dev.abhay.hypericon.model.Selection
 import dev.abhay.hypericon.palette.Seed
 import dev.abhay.hypericon.palette.SeedStyle
 import kotlinx.coroutines.flow.first
+import org.json.JSONObject
 
 /** What survives an app restart: the controls' selection and the last preview. */
 data class SavedSelections(
@@ -23,12 +25,29 @@ data class SavedSelections(
     val committed: Selection?,
     /** Colours captured at Preview time, so the restored grid shows exactly what was previewed. */
     val committedPalette: IconPalette?,
+    /**
+     * The committed selection's colours in the other icon style, also captured at Preview time
+     * (used by edited apps). Null when saved by 2.5a or earlier, which didn't store it.
+     */
+    val committedOppositePalette: IconPalette? = null,
 )
+
+/** The theme file "Reapply" uses: the last one applied, or the last one exported. */
+data class LastTheme(val title: String, val style: IconStyle, val absolutePath: String)
 
 interface SelectionStore {
     suspend fun load(): SavedSelections?
 
     suspend fun save(saved: SavedSelections)
+
+    /** Per-app icon edits, keyed by `LauncherApp.key`; empty if none were saved. */
+    suspend fun loadEdits(): Map<String, IconEdit>
+
+    suspend fun saveEdits(edits: Map<String, IconEdit>)
+
+    suspend fun loadLastTheme(): LastTheme?
+
+    suspend fun saveLastTheme(theme: LastTheme)
 }
 
 private val Context.selectionDataStore: DataStore<Preferences> by preferencesDataStore(name = "selection")
@@ -41,14 +60,32 @@ class DataStoreSelectionStore(context: Context) : SelectionStore {
         val prefs = store.data.first()
         val pending = prefs.selection(PENDING) ?: return null
         val committed = prefs.selection(COMMITTED)
-        val palette = if (committed == null) {
-            null
-        } else {
-            val bg = prefs[intPreferencesKey("$COMMITTED.bg")]
-            val fg = prefs[intPreferencesKey("$COMMITTED.fg")]
-            if (bg != null && fg != null) IconPalette(bg, fg) else null
+        val palette = if (committed == null) null else prefs.palette(COMMITTED)
+        val opposite = if (palette == null) null else prefs.palette(OPPOSITE)
+        return SavedSelections(pending, committed?.takeIf { palette != null }, palette, opposite)
+    }
+
+    override suspend fun loadEdits(): Map<String, IconEdit> =
+        store.data.first()[stringPreferencesKey(EDITS)]?.let(EditsJson::decode).orEmpty()
+
+    override suspend fun saveEdits(edits: Map<String, IconEdit>) {
+        store.edit { it[stringPreferencesKey(EDITS)] = EditsJson.encode(edits) }
+    }
+
+    override suspend fun loadLastTheme(): LastTheme? {
+        val prefs = store.data.first()
+        val title = prefs[stringPreferencesKey("$LAST_THEME.title")] ?: return null
+        val style = enumOrNull<IconStyle>(prefs[stringPreferencesKey("$LAST_THEME.style")]) ?: return null
+        val path = prefs[stringPreferencesKey("$LAST_THEME.path")] ?: return null
+        return LastTheme(title, style, path)
+    }
+
+    override suspend fun saveLastTheme(theme: LastTheme) {
+        store.edit {
+            it[stringPreferencesKey("$LAST_THEME.title")] = theme.title
+            it[stringPreferencesKey("$LAST_THEME.style")] = theme.style.name
+            it[stringPreferencesKey("$LAST_THEME.path")] = theme.absolutePath
         }
-        return SavedSelections(pending, committed?.takeIf { palette != null }, palette)
     }
 
     override suspend fun save(saved: SavedSelections) {
@@ -56,12 +93,11 @@ class DataStoreSelectionStore(context: Context) : SelectionStore {
             prefs.putSelection(PENDING, saved.pending)
             val committed = saved.committed
             val palette = saved.committedPalette
+            prefs.asMap().keys.filter { it.name.startsWith("$COMMITTED.") }.forEach { prefs.remove(it) }
             if (committed != null && palette != null) {
                 prefs.putSelection(COMMITTED, committed)
-                prefs[intPreferencesKey("$COMMITTED.bg")] = palette.background
-                prefs[intPreferencesKey("$COMMITTED.fg")] = palette.foreground
-            } else {
-                prefs.asMap().keys.filter { it.name.startsWith("$COMMITTED.") }.forEach { prefs.remove(it) }
+                prefs.putPalette(COMMITTED, palette)
+                saved.committedOppositePalette?.let { prefs.putPalette(OPPOSITE, it) }
             }
         }
     }
@@ -90,11 +126,63 @@ class DataStoreSelectionStore(context: Context) : SelectionStore {
         this[stringPreferencesKey("$prefix.seed.name")] = selection.seed.name
     }
 
+    private fun Preferences.palette(prefix: String): IconPalette? {
+        val bg = this[intPreferencesKey("$prefix.bg")] ?: return null
+        val fg = this[intPreferencesKey("$prefix.fg")] ?: return null
+        return IconPalette(bg, fg)
+    }
+
+    private fun MutablePreferences.putPalette(prefix: String, palette: IconPalette) {
+        this[intPreferencesKey("$prefix.bg")] = palette.background
+        this[intPreferencesKey("$prefix.fg")] = palette.foreground
+    }
+
     private inline fun <reified T : Enum<T>> enumOrNull(name: String?): T? =
         name?.let { n -> enumValues<T>().firstOrNull { it.name == n } }
 
     private companion object {
         const val PENDING = "pending"
         const val COMMITTED = "committed"
+        const val OPPOSITE = "committed.opposite"
+        const val EDITS = "edits"
+        const val LAST_THEME = "last_theme"
+    }
+}
+
+/**
+ * Icon edits as JSON: `{"<key>": {"base": "DARK", "offset": -6, "inverted": true, "contrast": 60}}`.
+ * Entries that can't be read (unknown base, wrong types) are skipped rather than failing the rest.
+ */
+internal object EditsJson {
+    fun encode(edits: Map<String, IconEdit>): String = JSONObject().apply {
+        edits.forEach { (key, edit) ->
+            put(
+                key,
+                JSONObject()
+                    .put("base", edit.base.name)
+                    .put("offset", edit.darkToneOffset)
+                    .put("inverted", edit.inverted)
+                    .put("contrast", edit.contrast),
+            )
+        }
+    }.toString()
+
+    fun decode(json: String): Map<String, IconEdit> {
+        val root = runCatching { JSONObject(json) }.getOrNull() ?: return emptyMap()
+        return buildMap {
+            for (key in root.keys()) {
+                val entry = root.optJSONObject(key) ?: continue
+                val base = IconStyle.entries.firstOrNull { it.name == entry.optString("base") } ?: continue
+                put(
+                    key,
+                    IconEdit(
+                        base = base,
+                        darkToneOffset = entry.optInt("offset", 0),
+                        inverted = entry.optBoolean("inverted", false),
+                        contrast = entry.optInt("contrast", 0),
+                    ),
+                )
+            }
+        }
     }
 }

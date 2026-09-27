@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import androidx.core.graphics.createBitmap
 import com.google.common.truth.Truth.assertThat
 import dev.abhay.hypericon.apps.AppSource
+import dev.abhay.hypericon.data.LastTheme
 import dev.abhay.hypericon.data.SavedSelections
 import dev.abhay.hypericon.data.SelectionStore
 import dev.abhay.hypericon.export.ExportRequest
@@ -17,6 +18,7 @@ import dev.abhay.hypericon.model.ColorSource
 import dev.abhay.hypericon.model.Glyph
 import dev.abhay.hypericon.model.GlyphSource
 import dev.abhay.hypericon.model.IconEdit
+import dev.abhay.hypericon.model.IconPalette
 import dev.abhay.hypericon.model.IconStyle
 import dev.abhay.hypericon.model.LauncherApp
 import dev.abhay.hypericon.model.Selection
@@ -77,7 +79,12 @@ class MainViewModelTest {
         override fun load() = wallpaper
     }
 
-    private class FakeStore(var saved: SavedSelections? = null, val gate: CompletableDeferred<Unit>? = null) : SelectionStore {
+    private class FakeStore(
+        var saved: SavedSelections? = null,
+        val gate: CompletableDeferred<Unit>? = null,
+        var edits: Map<String, IconEdit> = emptyMap(),
+        val editsGate: CompletableDeferred<Unit>? = null,
+    ) : SelectionStore {
         override suspend fun load(): SavedSelections? {
             gate?.await()
             return saved
@@ -85,6 +92,23 @@ class MainViewModelTest {
 
         override suspend fun save(saved: SavedSelections) {
             this.saved = saved
+        }
+
+        override suspend fun loadEdits(): Map<String, IconEdit> {
+            editsGate?.await()
+            return edits
+        }
+
+        override suspend fun saveEdits(edits: Map<String, IconEdit>) {
+            this.edits = edits
+        }
+
+        var lastTheme: LastTheme? = null
+
+        override suspend fun loadLastTheme() = lastTheme
+
+        override suspend fun saveLastTheme(theme: LastTheme) {
+            lastTheme = theme
         }
     }
 
@@ -109,6 +133,8 @@ class MainViewModelTest {
         override suspend fun copyTo(file: File, uri: String) = Unit
     }
 
+    private val existingFiles = mutableSetOf<String>()
+
     private fun TestScope.viewModel(store: SelectionStore = FakeStore()) = MainViewModel(
         apps = fakeApps,
         loader = fakeLoader,
@@ -119,6 +145,7 @@ class MainViewModelTest {
         systemStyle = IconStyle.DARK,
         iconPx = 160,
         detailPx = 264,
+        fileExists = { it in existingFiles },
         loadDispatcher = dispatcher,
         workDispatcher = dispatcher,
     )
@@ -301,7 +328,118 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `restored preview also knows the opposite-style colours`() = runTest(dispatcher) {
+    fun `reapply targets the last export until a theme is applied, and survives a restart`() = runTest(dispatcher) {
+        val store = FakeStore()
+        val vm = viewModel(store)
+        advanceUntilIdle()
+        assertThat(vm.state.value.lastTheme).isNull()
+        vm.preview()
+        existingFiles += listOf(
+            "/sdcard/Download/HyperIcon/HyperIcon-Primary-Light-20260927-1015.mtz",
+            "/sdcard/Download/HyperIcon/HyperIcon-Primary-Dark-20260927-1015.mtz",
+        )
+        vm.export(ExportOptions("HyperIcon · Primary", setOf(IconStyle.LIGHT, IconStyle.DARK)), java.time.LocalDateTime.of(2026, 9, 27, 10, 15))
+        advanceUntilIdle()
+
+        // Both: the previewed (Dark, the system style here) file is the target.
+        assertThat(vm.state.value.lastTheme!!.style).isEqualTo(IconStyle.DARK)
+        assertThat(vm.state.value.lastThemeAvailable).isTrue()
+        val light = (vm.state.value.export as ExportState.Done).files.first { it.style == IconStyle.LIGHT }
+        vm.onThemeApplied(light)
+        advanceUntilIdle()
+        assertThat(store.lastTheme).isEqualTo(LastTheme("HyperIcon · Primary · Light", IconStyle.LIGHT, light.absolutePath))
+
+        val restarted = viewModel(store)
+        advanceUntilIdle()
+        assertThat(restarted.state.value.lastTheme).isEqualTo(store.lastTheme)
+        assertThat(restarted.state.value.lastThemeAvailable).isTrue()
+
+        // Deleted from Downloads: noticed on the next resume.
+        existingFiles.clear()
+        restarted.onResume()
+        assertThat(restarted.state.value.lastThemeAvailable).isFalse()
+    }
+
+    @Test
+    fun `edits are saved and survive a restart`() = runTest(dispatcher) {
+        val store = FakeStore()
+        val vm = viewModel(store)
+        advanceUntilIdle()
+        vm.preview()
+        val (alpha, beta) = vm.state.value.items.map { it.app.key }
+        vm.saveEdit(alpha, IconEdit(IconStyle.LIGHT, -4, inverted = true, contrast = 70))
+        vm.saveEdit(beta, IconEdit(IconStyle.DARK))
+        vm.resetEdit(beta)
+        advanceUntilIdle()
+        assertThat(store.edits).containsExactly(alpha, IconEdit(IconStyle.LIGHT, -4, inverted = true, contrast = 70))
+
+        val restarted = viewModel(store)
+        advanceUntilIdle()
+        assertThat(restarted.state.value.edits).isEqualTo(store.edits)
+        assertThat(restarted.state.value.paletteFor(alpha)).isNotNull()
+    }
+
+    @Test
+    fun `an edit made before saved edits load keeps both`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val store = FakeStore(edits = mapOf("a.native/.Main" to IconEdit(IconStyle.DARK, 2)), editsGate = gate)
+        val vm = viewModel(store)
+        advanceUntilIdle()
+        vm.preview()
+        val gamma = vm.state.value.items[2].app.key
+        vm.saveEdit(gamma, IconEdit(IconStyle.LIGHT))
+        advanceUntilIdle()
+        // Nothing is written until the saved edits are merged in.
+        assertThat(store.edits.keys).containsExactly("a.native/.Main")
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertThat(vm.state.value.edits.keys).containsExactly("a.native/.Main", gamma)
+        assertThat(store.edits.keys).containsExactly("a.native/.Main", gamma)
+    }
+
+    @Test
+    fun `the saved opposite-style colours are restored as previewed`() = runTest(dispatcher) {
+        val store = FakeStore()
+        val vm = viewModel(store)
+        advanceUntilIdle()
+        vm.preview()
+        advanceUntilIdle()
+        val previewedOpposite = vm.state.value.committedOppositePalette
+        assertThat(store.saved!!.committedOppositePalette).isEqualTo(previewedOpposite)
+
+        // A wallpaper change after the preview must not change a restored grid.
+        val changed = SavedSelections(store.saved!!.pending, store.saved!!.committed, store.saved!!.committedPalette, IconPalette(1, 2))
+        val restarted = viewModel(FakeStore(changed))
+        advanceUntilIdle()
+        assertThat(restarted.state.value.committedOppositePalette).isEqualTo(IconPalette(1, 2))
+    }
+
+    @Test
+    fun `the edited filter shows edited apps and falls back to all when emptied`() = runTest(dispatcher) {
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.preview()
+        val beta = vm.state.value.items[1]
+        vm.saveEdit(beta.app.key, IconEdit(IconStyle.LIGHT))
+        assertThat(vm.state.value.editedCount).isEqualTo(1)
+        vm.setFilter(GridFilter.EDITED)
+        assertThat(vm.state.value.visibleItems).containsExactly(beta)
+        vm.resetEdit(beta.app.key)
+        assertThat(vm.state.value.filter).isEqualTo(GridFilter.ALL)
+    }
+
+    @Test
+    fun `edits of apps that are not installed are kept but not counted`() = runTest(dispatcher) {
+        val store = FakeStore(edits = mapOf("gone.app/.Main" to IconEdit(IconStyle.DARK)))
+        val vm = viewModel(store)
+        advanceUntilIdle()
+        assertThat(vm.state.value.edits).containsKey("gone.app/.Main")
+        assertThat(vm.state.value.editedCount).isEqualTo(0)
+    }
+
+    @Test
+    fun `restored preview from before 3a recomputes the opposite-style colours`() = runTest(dispatcher) {
         val seed = SeedPresets.AOSP[1]
         val selection = Selection(IconStyle.LIGHT, Accent.SECONDARY, ColorSource.CUSTOM, seed)
         val palette = seed.palettes()[Accent.SECONDARY]!![IconStyle.LIGHT]!!
