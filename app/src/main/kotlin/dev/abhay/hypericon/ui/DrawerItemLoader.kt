@@ -37,6 +37,9 @@ interface ItemLoader {
     fun load(app: LauncherApp, iconPx: Int, glyphPx: Int): DrawerItem
 
     fun details(app: LauncherApp, sizePx: Int): DetailImages
+
+    /** A glyph at [sizePx] (full layer), e.g. for the editor's large preview. */
+    fun glyph(app: LauncherApp, sizePx: Int): ImageBitmap?
 }
 
 class DrawerItemLoader(private val icons: IconSourceLoader) : ItemLoader {
@@ -47,6 +50,9 @@ class DrawerItemLoader(private val icons: IconSourceLoader) : ItemLoader {
         val glyph = GlyphExtractor.extract(icon.drawable, glyphPx)
         return DrawerItem(app, original, icon.info(), glyph)
     }
+
+    override fun glyph(app: LauncherApp, sizePx: Int): ImageBitmap? =
+        GlyphExtractor.extract(icons.load(app).drawable, sizePx).mask.asImageBitmap()
 
     override fun details(app: LauncherApp, sizePx: Int) = DetailImages(
         fromResources = icons.loadFromResources(app)?.renderOriginal(sizePx)?.asImageBitmap(),

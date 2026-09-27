@@ -70,12 +70,12 @@ const val GRID_COLUMNS = 5
 @Composable
 fun AppGrid(
     items: List<DrawerItem>,
-    colors: IconColors?,
+    /** Colours for each app (edits applied); null before the first Preview, which shows originals. */
+    colorsFor: (DrawerItem) -> IconColors?,
+    /** Glyph contrast edit (0..100) per item. */
+    contrastFor: (DrawerItem) -> Int = { 0 },
     header: GridHeader,
     contentPadding: PaddingValues,
-    /** Colours for apps shown in the opposite icon style. */
-    flipColors: IconColors?,
-    flipped: Set<String>,
     selected: Set<String>,
     onItemClick: (DrawerItem) -> Unit,
     onItemLongClick: (DrawerItem) -> Unit,
@@ -125,7 +125,7 @@ fun AppGrid(
                 DefaultPaletteBanner(header.onUseCustomColours, header.onDismissDefaultPaletteBanner)
             }
         }
-        if (colors == null) {
+        if (!header.previewed) {
             item(key = "hint", span = { GridItemSpan(maxLineSpan) }) { HintCard() }
         }
         if (header.showCountsReady) {
@@ -138,16 +138,16 @@ fun AppGrid(
                     .fillMaxWidth()
                     .combinedClickable(
                         onClickLabel = if (selected.isNotEmpty()) "Select" else "Details",
-                        onLongClickLabel = "Select to flip light/dark",
+                        onLongClickLabel = "Select to edit",
                         onClick = { onItemClick(item) },
                         onLongClick = { onItemLongClick(item) },
                     )
                     .padding(vertical = 4.dp),
             ) {
                 val key = item.app.key
-                val itemColors = if (key in flipped && colors != null) flipColors ?: colors else colors
+                val itemColors = colorsFor(item)
                 Crossfade(targetState = itemColors, label = "icon") { current ->
-                    GridIcon(item, current, selected = key in selected)
+                    GridIcon(item, current, contrastFor(item), selected = key in selected)
                 }
                 Spacer(Modifier.height(6.dp))
                 Text(
@@ -164,14 +164,14 @@ fun AppGrid(
 }
 
 @Composable
-private fun GridIcon(item: DrawerItem, colors: IconColors?, selected: Boolean) {
+private fun GridIcon(item: DrawerItem, colors: IconColors?, contrast: Int, selected: Boolean) {
     val scale by animateFloatAsState(if (selected) 0.86f else 1f, label = "select")
     Box(Modifier.size(MainViewModel.GRID_ICON_DP.dp)) {
         val original = item.original
         when {
             colors != null && item.glyph != null -> {
                 ThemedIcon(
-                    glyph = item.glyphImage,
+                    glyph = rememberContrastGlyph(item.glyphImage, contrast),
                     colors = colors,
                     modifier = Modifier.fillMaxSize().scale(scale),
                 )
@@ -228,6 +228,8 @@ private fun GeneratedBadge(modifier: Modifier) {
 
 /** Content shown above the icons. */
 data class GridHeader(
+    /** A Preview has been made, so themed icons are shown. */
+    val previewed: Boolean,
     val filter: GridFilter,
     val counts: Map<GridFilter, Int>,
     val showCountsReady: Boolean,

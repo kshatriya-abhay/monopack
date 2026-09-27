@@ -18,6 +18,11 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -45,105 +50,126 @@ fun MainScreen(viewModel: MainViewModel = viewModel(factory = MainViewModel.Fact
     var exportOptions by remember { mutableStateOf<ExportOptions?>(null) }
     var collapseRequests by remember { mutableIntStateOf(0) }
     var expandRequests by remember { mutableIntStateOf(0) }
-    val committedColors = state.committedPalette?.let {
-        remember(it) { IconColors(Color(it.background), Color(it.foreground)) }
-    }
-    val flipColors = state.committedFlipPalette?.let {
-        remember(it) { IconColors(Color(it.background), Color(it.foreground)) }
-    }
+    val committedColors = state.committedPalette?.let { remember(it) { it.toIconColors() } }
+    val editorItem = state.editorTarget?.let { key -> state.items.firstOrNull { it.app.key == key } }
 
     // Back leaves selection mode first.
     BackHandler(enabled = state.selecting) { viewModel.clearSelection() }
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.onResume() }
 
-    Scaffold(
-        topBar = {
-            Column {
-                if (state.selecting) {
-                    TopAppBar(
-                        title = { Text("${state.selected.size} selected") },
-                        navigationIcon = { TextButton(onClick = viewModel::clearSelection) { Text("Cancel") } },
-                        actions = {
-                            TextButton(onClick = viewModel::selectAll) { Text("All") }
-                            TextButton(onClick = viewModel::flipSelected) {
-                                Text(if (state.selectionAllFlipped) "Unflip" else "Flip light/dark")
-                            }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-                    )
-                } else {
-                    TopAppBar(
-                        title = { Text("HyperIcon") },
-                        actions = {
-                            TextButton(onClick = viewModel::refresh, enabled = state.iconsReady) { Text("Refresh") }
-                            TextButton(onClick = { exportOptions = viewModel.defaultExportOptions() }, enabled = state.exportEnabled) {
-                                Text("Export")
-                            }
-                        },
-                    )
+    Box(Modifier.fillMaxSize()) {
+        Scaffold(
+            topBar = {
+                Column {
+                    if (state.selecting) {
+                        TopAppBar(
+                            title = { Text("${state.selected.size} selected") },
+                            navigationIcon = { TextButton(onClick = viewModel::clearSelection) { Text("Cancel") } },
+                            actions = {
+                                if (state.selectionHasEdits) {
+                                    TextButton(onClick = viewModel::resetSelectedEdits) { Text("Reset") }
+                                }
+                                TextButton(onClick = viewModel::editSelection, enabled = state.canEditSelection) { Text("Edit icon") }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                        )
+                    } else {
+                        TopAppBar(
+                            title = { Text("HyperIcon") },
+                            actions = {
+                                TextButton(onClick = viewModel::refresh, enabled = state.iconsReady) { Text("Refresh") }
+                                TextButton(onClick = { exportOptions = viewModel.defaultExportOptions() }, enabled = state.exportEnabled) {
+                                    Text("Export")
+                                }
+                            },
+                        )
+                    }
+                    if (!state.iconsReady) {
+                        LinearProgressIndicator(
+                            progress = { state.fetchProgress },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
                 }
-                if (!state.iconsReady) {
-                    LinearProgressIndicator(
-                        progress = { state.fetchProgress },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
-        },
-        bottomBar = {
-            ControlPanel(
-                state = state,
-                onStyleChange = viewModel::setIconStyle,
-                onAccentChange = viewModel::setAccent,
-                onSourceChange = viewModel::setColorSource,
-                onSeedChange = viewModel::setSeed,
-                onPreview = viewModel::preview,
-                collapseRequests = collapseRequests,
-                expandRequests = expandRequests,
-            )
-        },
-    ) { padding ->
-        when {
-            state.error != null && state.items.isEmpty() -> ErrorState(state.error!!, viewModel::refresh, padding)
-            state.items.isEmpty() && state.scanning -> Box(
-                Modifier.fillMaxSize().padding(padding),
-                contentAlignment = Alignment.Center,
-            ) { CircularProgressIndicator() }
-            state.items.isEmpty() -> Box(
-                Modifier.fillMaxSize().padding(padding),
-                contentAlignment = Alignment.Center,
-            ) { Text("No launcher apps found") }
-            else -> AppGrid(
-                items = state.visibleItems,
-                colors = committedColors,
-                header = GridHeader(
-                    filter = state.filter,
-                    counts = mapOf(
-                        GridFilter.ALL to state.total,
-                        GridFilter.NATIVE to state.count(GlyphSource.NATIVE_MONO),
-                        GridFilter.GENERATED to state.total - state.count(GlyphSource.NATIVE_MONO),
+            },
+            bottomBar = {
+                ControlPanel(
+                    state = state,
+                    onStyleChange = viewModel::setIconStyle,
+                    onAccentChange = viewModel::setAccent,
+                    onSourceChange = viewModel::setColorSource,
+                    onSeedChange = viewModel::setSeed,
+                    onPreview = viewModel::preview,
+                    collapseRequests = collapseRequests,
+                    expandRequests = expandRequests,
+                )
+            },
+        ) { padding ->
+            when {
+                state.error != null && state.items.isEmpty() -> ErrorState(state.error!!, viewModel::refresh, padding)
+                state.items.isEmpty() && state.scanning -> Box(
+                    Modifier.fillMaxSize().padding(padding),
+                    contentAlignment = Alignment.Center,
+                ) { CircularProgressIndicator() }
+                state.items.isEmpty() -> Box(
+                    Modifier.fillMaxSize().padding(padding),
+                    contentAlignment = Alignment.Center,
+                ) { Text("No launcher apps found") }
+                else -> AppGrid(
+                    items = state.visibleItems,
+                    colorsFor = { item -> if (committedColors == null) null else state.paletteFor(item.app.key)?.toIconColors() },
+                    contrastFor = { item -> if (committedColors == null) 0 else state.edits[item.app.key]?.contrast ?: 0 },
+                    header = GridHeader(
+                        previewed = committedColors != null,
+                        filter = state.filter,
+                        counts = mapOf(
+                            GridFilter.ALL to state.total,
+                            GridFilter.NATIVE to state.count(GlyphSource.NATIVE_MONO),
+                            GridFilter.GENERATED to state.total - state.count(GlyphSource.NATIVE_MONO),
+                        ),
+                        showCountsReady = state.iconsReady,
+                        showDefaultPaletteBanner = state.paletteLooksDefault &&
+                            state.pending.source == ColorSource.WALLPAPER &&
+                            !state.defaultPaletteBannerDismissed,
+                        onFilterChange = viewModel::setFilter,
+                        onUseCustomColours = {
+                            viewModel.setColorSource(ColorSource.CUSTOM)
+                            expandRequests++
+                        },
+                        onDismissDefaultPaletteBanner = viewModel::dismissDefaultPaletteBanner,
                     ),
-                    showCountsReady = state.iconsReady,
-                    showDefaultPaletteBanner = state.paletteLooksDefault &&
-                        state.pending.source == ColorSource.WALLPAPER &&
-                        !state.defaultPaletteBannerDismissed,
-                    onFilterChange = viewModel::setFilter,
-                    onUseCustomColours = {
-                        viewModel.setColorSource(ColorSource.CUSTOM)
-                        expandRequests++
-                    },
-                    onDismissDefaultPaletteBanner = viewModel::dismissDefaultPaletteBanner,
-                ),
-                contentPadding = padding,
-                flipColors = flipColors,
-                flipped = state.flipped,
-                selected = state.selected,
-                onItemClick = { item -> if (state.selecting) viewModel.toggleSelection(item) else selected = item },
-                // Selecting only makes sense once the themed icons are shown.
-                onItemLongClick = { item -> if (committedColors != null) viewModel.onLongPress(item) else selected = item },
-                // Scrolling the icons collapses the control panel.
-                onUserScroll = { collapseRequests++ },
+                    contentPadding = padding,
+                    selected = state.selected,
+                    onItemClick = { item -> if (state.selecting) viewModel.toggleSelection(item) else selected = item },
+                    // Selecting only makes sense once the themed icons are shown.
+                    onItemLongClick = { item -> if (committedColors != null) viewModel.onLongPress(item) else selected = item },
+                    // Scrolling the icons collapses the control panel.
+                    onUserScroll = { collapseRequests++ },
+                )
+            }
+        }
+
+        // The icon editor covers the main screen, which keeps its state (scroll position, panel) underneath.
+        AnimatedVisibility(
+            visible = editorItem != null && state.committed != null,
+            enter = slideInHorizontally { it } + fadeIn(),
+            exit = slideOutHorizontally { it } + fadeOut(),
+        ) {
+            val item = editorItem ?: return@AnimatedVisibility
+            val committed = state.committed ?: return@AnimatedVisibility
+            IconEditorScreen(
+                item = item,
+                pairs = state.committedPairs,
+                globalStyle = committed.style,
+                edit = state.edits[item.app.key],
+                references = state.items
+                    .filter { it.glyph?.source == GlyphSource.NATIVE_MONO && it.app.key != item.app.key }
+                    .take(EDITOR_REFERENCE_COUNT),
+                loadGlyph = viewModel::loadEditorGlyph,
+                onSave = { viewModel.saveEdit(item.app.key, it) },
+                onReset = { viewModel.resetEdit(item.app.key) },
+                onClose = viewModel::closeEditor,
             )
         }
     }
@@ -168,12 +194,24 @@ fun MainScreen(viewModel: MainViewModel = viewModel(factory = MainViewModel.Fact
     selected?.let { item ->
         AppDetailsSheet(
             item = item,
-            colors = if (item.app.key in state.flipped) flipColors ?: committedColors else committedColors,
+            colors = state.paletteFor(item.app.key)?.toIconColors(),
+            edit = state.edits[item.app.key],
+            onEdit = if (committedColors != null && item.glyph != null) {
+                {
+                    selected = null
+                    viewModel.openEditor(item.app.key)
+                }
+            } else {
+                null
+            },
             loadDetails = viewModel::loadDetails,
             onDismiss = { selected = null },
         )
     }
 }
+
+/** Native-monochrome apps shown in the editor's comparison row. */
+private const val EDITOR_REFERENCE_COUNT = 4
 
 @Composable
 private fun ErrorState(message: String, onRetry: () -> Unit, padding: PaddingValues) {

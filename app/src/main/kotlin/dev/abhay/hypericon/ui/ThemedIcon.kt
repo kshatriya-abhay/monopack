@@ -1,5 +1,10 @@
 package dev.abhay.hypericon.ui
 
+import dev.abhay.hypericon.glyph.MaskContrast
+import dev.abhay.hypericon.glyph.GlyphExtractor
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.runtime.remember
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -15,6 +20,18 @@ import kotlin.math.roundToInt
 
 /** Plate + glyph colors used to draw themed icons. */
 data class IconColors(val background: Color, val foreground: Color)
+
+fun dev.abhay.hypericon.model.IconPalette.toIconColors() = IconColors(Color(background), Color(foreground))
+
+/** [glyph] with the editor's glyph [contrast] (0..100) applied, cached while both stay the same. */
+@Composable
+fun rememberContrastGlyph(glyph: ImageBitmap?, contrast: Int): ImageBitmap? = remember(glyph, contrast) {
+    if (glyph == null || contrast <= 0) {
+        glyph
+    } else {
+        GlyphExtractor.withContrast(glyph.asAndroidBitmap(), contrast / MaskContrast.MAX.toFloat()).asImageBitmap()
+    }
+}
 
 /**
  * A themed icon the way HyperOS renders a layered theme icon: a solid plate clipped to the

@@ -20,11 +20,13 @@ import dev.abhay.hypericon.mtz.MtzNaming
 import dev.abhay.hypericon.model.Accent
 import dev.abhay.hypericon.model.ColorSource
 import dev.abhay.hypericon.model.GlyphSource
+import dev.abhay.hypericon.model.IconEdit
 import dev.abhay.hypericon.model.IconPalette
 import dev.abhay.hypericon.model.IconStyle
 import dev.abhay.hypericon.model.LauncherApp
 import dev.abhay.hypericon.model.Selection
 import dev.abhay.hypericon.palette.DefaultPalette
+import dev.abhay.hypericon.palette.IconEdits
 import dev.abhay.hypericon.palette.PaletteSource
 import dev.abhay.hypericon.palette.Seed
 import kotlinx.coroutines.CancellationException
@@ -97,15 +99,14 @@ data class UiState(
     val committedPalette: IconPalette? = null,
     val filter: GridFilter = GridFilter.ALL,
     /**
-     * Colours of the committed selection in the *opposite* icon style, used for apps whose style
-     * is flipped.
+     * Colours of the committed selection in the *other* icon style, so edited apps can use either
+     * style's pair ([committedPairs]).
      */
     val committedFlipPalette: IconPalette? = null,
-    /**
-     * Apps (keys of [DrawerItem.app]) shown in the opposite icon style: Light icons for them in
-     * Dark mode and vice versa. Kept in memory only for this session.
-     */
-    val flipped: Set<String> = emptySet(),
+    /** Per-app icon edits (keys of [DrawerItem.app]); session only. */
+    val edits: Map<String, IconEdit> = emptyMap(),
+    /** The app whose icon is open in the icon editor, or null. */
+    val editorTarget: String? = null,
     /** Apps selected with long-press; non-empty means selection mode. */
     val selected: Set<String> = emptySet(),
     val export: ExportState = ExportState.Idle,
@@ -115,8 +116,23 @@ data class UiState(
 
     val selecting: Boolean get() = selected.isNotEmpty()
 
-    /** True if every selected app is already flipped (so the action restores them). */
-    val selectionAllFlipped: Boolean get() = selecting && flipped.containsAll(selected)
+    /** The icon editor works on one app at a time. */
+    val canEditSelection: Boolean get() = selected.size == 1 && committedPalette != null
+
+    /** Some selected app has an edit (so Reset is offered). */
+    val selectionHasEdits: Boolean get() = selected.any { it in edits }
+
+    /** The committed selection's plate/glyph pair for each icon style (empty before a Preview). */
+    val committedPairs: Map<IconStyle, IconPalette>
+        get() {
+            val style = committed?.style ?: return emptyMap()
+            val shown = committedPalette ?: return emptyMap()
+            return mapOf(style to shown, style.opposite() to (committedFlipPalette ?: shown))
+        }
+
+    /** The colours an app is drawn with (its edit applied), or null before a Preview. */
+    fun paletteFor(key: String): IconPalette? =
+        committed?.let { IconEdits.resolve(committedPairs, it.style, edits[key]) }
 
     val total: Int get() = items.size
     val loaded: Int get() = items.count { it.glyph != null }
@@ -155,6 +171,8 @@ class MainViewModel(
     systemStyle: IconStyle,
     private val iconPx: Int,
     private val detailPx: Int,
+    /** Size of the editor's large preview in pixels. */
+    private val editorIconPx: Int = detailPx,
     private val loadDispatcher: CoroutineDispatcher = Dispatchers.Default.limitedParallelism(4),
     private val workDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
@@ -194,20 +212,39 @@ class MainViewModel(
         }
     }
 
-    fun selectAll() = _state.update { s ->
-        s.copy(selected = s.visibleItems.filter { it.glyph != null }.map { it.app.key }.toSet())
-    }
-
     fun clearSelection() = _state.update { it.copy(selected = emptySet()) }
 
-    /**
-     * Flips the selected apps to the opposite icon style, or restores them if they're all flipped
-     * already; ends selection mode. In memory only.
-     */
-    fun flipSelected() = _state.update {
-        val flipped = if (it.selectionAllFlipped) it.flipped - it.selected else it.flipped + it.selected
-        it.copy(flipped = flipped, selected = emptySet())
+    /** Opens the icon editor for [key] (needs a Preview, so the committed palettes exist). */
+    fun openEditor(key: String) = _state.update {
+        if (it.committedPalette == null || it.items.none { item -> item.app.key == key && item.glyph != null }) {
+            it
+        } else {
+            it.copy(editorTarget = key, selected = emptySet())
+        }
     }
+
+    /** Opens the editor for the single selected app. */
+    fun editSelection() {
+        val s = _state.value
+        if (s.canEditSelection) openEditor(s.selected.single())
+    }
+
+    fun closeEditor() = _state.update { it.copy(editorTarget = null) }
+
+    /** Saves [edit] for [key] (session only) and closes the editor. */
+    fun saveEdit(key: String, edit: IconEdit) = _state.update {
+        it.copy(edits = it.edits + (key to edit), editorTarget = null)
+    }
+
+    /** Removes the edit for [key], so it follows the global icon style again, and closes the editor. */
+    fun resetEdit(key: String) = _state.update { it.copy(edits = it.edits - key, editorTarget = null) }
+
+    /** Removes the edits of every selected app and leaves selection mode. */
+    fun resetSelectedEdits() = _state.update { it.copy(edits = it.edits - it.selected, selected = emptySet()) }
+
+    /** A glyph for the editor's large preview, sharper than the grid's (null if it fails). */
+    suspend fun loadEditorGlyph(app: LauncherApp): androidx.compose.ui.graphics.ImageBitmap? =
+        withContext(workDispatcher) { runCatching { loader.glyph(app, glyphSizeFor(editorIconPx)) }.getOrNull() }
 
     fun setIconStyle(style: IconStyle) = edit { it.copy(pending = it.pending.copy(style = style)) }
 
@@ -249,23 +286,20 @@ class MainViewModel(
 
     /**
      * Exports the previewed icons as one `.mtz` per chosen icon style (every launcher entry,
-     * flips applied) and saves them to Downloads.
+     * icon edits applied) and saves them to Downloads.
      */
     fun export(options: ExportOptions, now: java.time.LocalDateTime = java.time.LocalDateTime.now()) {
         val s = _state.value
         if (!s.exportEnabled || options.styles.isEmpty()) return
         val committed = s.committed ?: return
-        val shown = s.committedPalette ?: return
-        val opposite = s.committedFlipPalette ?: shown
+        if (s.committedPalette == null) return
+        val pairs = s.committedPairs
         val entries = s.items.filter {
             it.glyph != null && it.glyph.source != GlyphSource.FAILED &&
                 (options.includeGenerated || it.glyph.source == GlyphSource.NATIVE_MONO)
         }
         val styles = IconStyle.entries.filter { it in options.styles }
         val requests = styles.map { style ->
-            // The committed style uses the previewed pair; the other style is the flip pair.
-            val normal = if (style == committed.style) shown else opposite
-            val flipped = if (style == committed.style) opposite else shown
             val title = "${options.name.trim().ifEmpty { "HyperIcon" }} · ${style.displayName}"
             style to ExportRequest(
                 title = title,
@@ -274,7 +308,8 @@ class MainViewModel(
                 apps = entries.map {
                     ExportApp(
                         app = it.app,
-                        palette = if (it.app.key in s.flipped) flipped else normal,
+                        palette = IconEdits.resolve(pairs, style, s.edits[it.app.key]) ?: pairs.getValue(style),
+                        contrast = s.edits[it.app.key]?.contrast ?: 0,
                         folders = MtzNaming.folders(it.app.packageName, it.app.component.className, it.app.isMainActivity),
                     )
                 },
@@ -437,6 +472,7 @@ class MainViewModel(
 
         const val GRID_ICON_DP = 58f
         const val DETAIL_ICON_DP = 96f
+        const val EDITOR_ICON_DP = 112f
         private const val PUBLISH_INTERVAL_MS = 80L
         private const val TAG = "HyperIcon"
 
@@ -459,6 +495,7 @@ class MainViewModel(
                     systemStyle = if (night == Configuration.UI_MODE_NIGHT_YES) IconStyle.DARK else IconStyle.LIGHT,
                     iconPx = (GRID_ICON_DP * density).roundToInt(),
                     detailPx = (DETAIL_ICON_DP * density).roundToInt(),
+                    editorIconPx = (EDITOR_ICON_DP * density).roundToInt(),
                 )
             }
         }

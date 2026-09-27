@@ -25,6 +25,21 @@ import kotlin.math.sqrt
  * Ported from AOSP `frameworks/libs/systemui/iconloaderlib` (Apache License 2.0).
  */
 object GlyphExtractor {
+
+    /**
+     * A copy of the square ALPHA_8 [mask] with the editor's glyph contrast [amount] (0..1)
+     * applied (see [MaskContrast]); [mask] itself when there's nothing to change.
+     */
+    fun withContrast(mask: Bitmap, amount: Float): Bitmap {
+        if (amount <= 0f || mask.config != Bitmap.Config.ALPHA_8 || mask.width != mask.height) return mask
+        val size = mask.width
+        val pixels = ByteArray(size * size)
+        mask.copyPixelsToBuffer(java.nio.ByteBuffer.wrap(pixels))
+        val out = createBitmap(size, size, Bitmap.Config.ALPHA_8)
+        out.copyPixelsFromBuffer(java.nio.ByteBuffer.wrap(MaskContrast.apply(pixels, size, amount)))
+        return out
+    }
+
     /** `AdaptiveIconDrawable.getExtraInsetFraction()`: the layer is 1 + 2×0.25 = 1.5× the viewport. */
     private const val EXTRA_INSET = 0.25f
 

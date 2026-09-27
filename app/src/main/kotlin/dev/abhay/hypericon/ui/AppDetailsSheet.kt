@@ -13,10 +13,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -27,6 +29,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.abhay.hypericon.model.GlyphSource
+import dev.abhay.hypericon.model.IconEdit
+import dev.abhay.hypericon.model.IconStyle
 import dev.abhay.hypericon.model.IconOrigin
 import dev.abhay.hypericon.model.LauncherApp
 
@@ -41,6 +45,9 @@ fun AppDetailsSheet(
     colors: IconColors?,
     loadDetails: suspend (LauncherApp) -> DetailImages,
     onDismiss: () -> Unit,
+    edit: IconEdit? = null,
+    /** Opens the icon editor; null when editing isn't possible (no Preview yet). */
+    onEdit: (() -> Unit)? = null,
 ) {
     val details by produceState<DetailImages?>(initialValue = null, item.app.key) {
         value = loadDetails(item.app)
@@ -50,7 +57,8 @@ fun AppDetailsSheet(
         foreground = MaterialTheme.colorScheme.onSurface,
     )
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    // Fully expanded so the info lines and the Edit icon button are visible without dragging.
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
             Text(item.app.label, style = MaterialTheme.typography.titleLarge)
             Text(
@@ -65,7 +73,7 @@ fun AppDetailsSheet(
                 ImageTile("PackageManager") { details?.fromPackageManager?.let { FillImage(it) } }
                 ImageTile(item.glyph?.source?.label ?: "Themed") {
                     if (item.glyph != null) {
-                        ThemedIcon(item.glyphImage, themedColors, Modifier.fillMaxSize())
+                        ThemedIcon(rememberContrastGlyph(item.glyphImage, edit?.contrast ?: 0), themedColors, Modifier.fillMaxSize())
                     }
                 }
             }
@@ -78,6 +86,20 @@ fun AppDetailsSheet(
             }
             item.glyph?.let { InfoLine("Glyph", it.source.describe()) }
             InfoLine("Package-level icon", if (item.app.isMainActivity) "yes" else "no (secondary launcher entry)")
+            if (edit != null) {
+                val tone = when {
+                    edit.darkToneOffset == 0 -> "default dark colour"
+                    edit.darkToneOffset > 0 -> "dark colour +${edit.darkToneOffset}"
+                    else -> "dark colour −${-edit.darkToneOffset}"
+                }
+                val invert = if (edit.inverted) ", inverted" else ""
+                val contrast = if (edit.contrast > 0) ", contrast ${edit.contrast}%" else ""
+                InfoLine("Edited", "${if (edit.base == IconStyle.DARK) "Dark" else "Light"} icon, $tone$invert$contrast")
+            }
+            if (onEdit != null) {
+                Spacer(Modifier.height(16.dp))
+                Button(onClick = onEdit, modifier = Modifier.fillMaxWidth()) { Text("Edit icon") }
+            }
         }
     }
 }

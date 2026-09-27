@@ -9,6 +9,7 @@ import android.graphics.RectF
 import androidx.core.graphics.createBitmap
 import dev.abhay.hypericon.apps.IconSourceLoader
 import dev.abhay.hypericon.glyph.GlyphExtractor
+import dev.abhay.hypericon.glyph.MaskContrast
 import dev.abhay.hypericon.model.GlyphSource
 import dev.abhay.hypericon.model.IconPalette
 import dev.abhay.hypericon.model.LauncherApp
@@ -27,7 +28,13 @@ import java.io.File
  * One launcher entry to export, with the plate/glyph colours it should get (flips already applied)
  * and the icon folders to write it to ([dev.abhay.hypericon.mtz.MtzNaming]).
  */
-data class ExportApp(val app: LauncherApp, val palette: IconPalette, val folders: List<String>)
+data class ExportApp(
+    val app: LauncherApp,
+    val palette: IconPalette,
+    val folders: List<String>,
+    /** Glyph contrast edit, 0..100 (see `MaskContrast`). */
+    val contrast: Int = 0,
+)
 
 data class ExportRequest(
     val title: String,
@@ -108,8 +115,10 @@ class MtzExporter(private val context: Context, private val icons: IconSourceLoa
 
     private fun render(export: ExportApp, withPreview: Boolean): Rendered? {
         val raw = icons.load(export.app).drawable
-        val glyph = GlyphExtractor.extract(raw, LAYER)
-        if (glyph.source == GlyphSource.FAILED) return null
+        val extracted = GlyphExtractor.extract(raw, LAYER)
+        if (extracted.source == GlyphSource.FAILED) return null
+        val glyph = extracted.copy(mask = GlyphExtractor.withContrast(extracted.mask, export.contrast / MaskContrast.MAX.toFloat()))
+        if (glyph.mask !== extracted.mask) extracted.mask.recycle()
         val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG).apply { color = export.palette.foreground }
 
         val layer = createBitmap(LAYER, LAYER)

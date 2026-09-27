@@ -81,3 +81,25 @@ data class Selection(
 
 /** Resolved icon colors: the plate behind the glyph and the glyph itself. */
 data class IconPalette(val background: Int, val foreground: Int)
+
+/**
+ * A per-app icon adjustment made in the icon editor (session only for now).
+ *
+ * @property base the icon style whose plate/glyph pair this app uses, whatever the global icon
+ *   style is (absolute).
+ * @property darkToneOffset tone steps added to the darker of the two colours (the glyph of a
+ *   Light icon, the plate of a Dark icon); negative is darker. Hue and chroma are kept, so the
+ *   icon still follows accent and colour changes.
+ * @property inverted swaps the glyph and plate areas, for generated icons that come out "filled"
+ *   (the glyph covers most of the icon). The glyph layer covers the whole visible icon, so this is
+ *   drawn (and exported) as the pair with plate and glyph colours swapped.
+ * @property contrast glyph contrast, 0..100 (see `MaskContrast`): pushes the glyph's two opacity
+ *   levels apart, for generated icons whose colours had similar brightness (e.g. two saturated
+ *   colours), so plate and glyph no longer blend.
+ */
+data class IconEdit(
+    val base: IconStyle,
+    val darkToneOffset: Int = 0,
+    val inverted: Boolean = false,
+    val contrast: Int = 0,
+)

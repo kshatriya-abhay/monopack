@@ -17,7 +17,9 @@ import dev.abhay.hypericon.model.Accent
 import dev.abhay.hypericon.model.ColorSource
 import dev.abhay.hypericon.model.Glyph
 import dev.abhay.hypericon.model.GlyphSource
+import dev.abhay.hypericon.model.IconEdit
 import dev.abhay.hypericon.model.IconStyle
+import dev.abhay.hypericon.palette.IconEdits
 import dev.abhay.hypericon.model.LauncherApp
 import dev.abhay.hypericon.model.Selection
 import dev.abhay.hypericon.palette.PaletteSource
@@ -67,6 +69,8 @@ class MainViewModelTest {
         }
 
         override fun details(app: LauncherApp, sizePx: Int) = DetailImages(null, null)
+
+        override fun glyph(app: LauncherApp, sizePx: Int) = null
     }
 
     private val fakePalettes = object : PaletteSource {
@@ -200,49 +204,97 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `long-press selects apps and flip swaps them to the opposite style in memory`() = runTest(dispatcher) {
+    fun `edit icon works on one selected app and opens the editor`() = runTest(dispatcher) {
+        val vm = viewModel()
+        advanceUntilIdle()
+        val (alpha, beta) = vm.state.value.items
+
+        // No editor before a Preview.
+        vm.openEditor(alpha.app.key)
+        assertThat(vm.state.value.editorTarget).isNull()
+
+        vm.preview()
+        vm.onLongPress(alpha)
+        assertThat(vm.state.value.canEditSelection).isTrue()
+        vm.toggleSelection(beta)
+        assertThat(vm.state.value.canEditSelection).isFalse()
+        vm.editSelection()
+        assertThat(vm.state.value.editorTarget).isNull()
+
+        vm.toggleSelection(beta)
+        vm.editSelection()
+        val state = vm.state.value
+        assertThat(state.editorTarget).isEqualTo(alpha.app.key)
+        assertThat(state.selecting).isFalse()
+        vm.closeEditor()
+        assertThat(vm.state.value.editorTarget).isNull()
+    }
+
+    @Test
+    fun `saved edits use an absolute base and follow new colours`() = runTest(dispatcher) {
         val store = FakeStore()
         val vm = viewModel(store)
         advanceUntilIdle()
-        vm.preview()
-        val (alpha, beta) = vm.state.value.items
+        vm.preview() // Dark icons, Primary
+        val alpha = vm.state.value.items[0].app.key
+        val beta = vm.state.value.items[1].app.key
 
-        vm.onLongPress(alpha)
-        vm.toggleSelection(beta)
-        assertThat(vm.state.value.selected).containsExactly(alpha.app.key, beta.app.key)
-
-        vm.flipSelected()
+        vm.openEditor(alpha)
+        vm.saveEdit(alpha, IconEdit(IconStyle.LIGHT, -5))
         var state = vm.state.value
-        assertThat(state.selecting).isFalse()
-        assertThat(state.flipped).containsExactly(alpha.app.key, beta.app.key)
-        // Dark icons mode: flipped apps use the Light pair of the same accent.
-        assertThat(state.committedFlipPalette).isEqualTo(wallpaper[Accent.PRIMARY]!![IconStyle.LIGHT])
+        assertThat(state.editorTarget).isNull()
+        val lightPrimary = wallpaper[Accent.PRIMARY]!![IconStyle.LIGHT]!!
+        assertThat(state.paletteFor(alpha)).isEqualTo(IconEdits.withDarkToneOffset(lightPrimary, -5))
+        assertThat(state.paletteFor(beta)).isEqualTo(wallpaper[Accent.PRIMARY]!![IconStyle.DARK])
 
-        // Flips survive a new Preview, and follow the new selection's opposite style.
+        // Switching the global style keeps the absolute base; a new accent recolours with the offset kept.
         vm.setIconStyle(IconStyle.LIGHT)
         vm.setAccent(Accent.TERTIARY)
         vm.preview()
         state = vm.state.value
-        assertThat(state.flipped).containsExactly(alpha.app.key, beta.app.key)
-        assertThat(state.committedFlipPalette).isEqualTo(wallpaper[Accent.TERTIARY]!![IconStyle.DARK])
+        val lightTertiary = wallpaper[Accent.TERTIARY]!![IconStyle.LIGHT]!!
+        assertThat(state.paletteFor(alpha)).isEqualTo(IconEdits.withDarkToneOffset(lightTertiary, -5))
+        vm.setIconStyle(IconStyle.DARK)
+        vm.preview()
+        val darkTertiary = wallpaper[Accent.TERTIARY]!![IconStyle.DARK]!!
+        assertThat(vm.state.value.paletteFor(alpha)).isEqualTo(IconEdits.withDarkToneOffset(lightTertiary, -5))
+        assertThat(vm.state.value.paletteFor(beta)).isEqualTo(darkTertiary)
 
-        // Selecting only flipped apps turns the action into "unflip".
-        vm.onLongPress(alpha)
-        assertThat(vm.state.value.selectionAllFlipped).isTrue()
-        vm.flipSelected()
-        assertThat(vm.state.value.flipped).containsExactly(beta.app.key)
+        // Reset brings it back to the global style.
+        vm.resetEdit(alpha)
+        assertThat(vm.state.value.paletteFor(alpha)).isEqualTo(darkTertiary)
 
-        // Nothing about flips is persisted.
+        // Edits aren't persisted (session only).
         advanceUntilIdle()
-        assertThat(store.saved).isNotNull()
+        assertThat(store.saved!!.toString()).doesNotContain("IconEdit")
     }
 
     @Test
-    fun `select all picks every visible app and cancel clears the selection`() = runTest(dispatcher) {
+    fun `reset clears the edits of the selected apps`() = runTest(dispatcher) {
         val vm = viewModel()
         advanceUntilIdle()
-        vm.setFilter(GridFilter.GENERATED)
-        vm.selectAll()
+        vm.preview()
+        val (alpha, beta, gamma) = vm.state.value.items.map { it.app.key }
+        vm.saveEdit(alpha, IconEdit(IconStyle.LIGHT))
+        vm.saveEdit(gamma, IconEdit(IconStyle.LIGHT, 3))
+        vm.onLongPress(vm.state.value.items[1])
+        assertThat(vm.state.value.selectionHasEdits).isFalse()
+        vm.toggleSelection(vm.state.value.items[2])
+        assertThat(vm.state.value.selectionHasEdits).isTrue()
+        vm.resetSelectedEdits()
+        // Only the selected apps (beta, gamma) are reset; alpha keeps its edit.
+        assertThat(vm.state.value.edits.keys).containsExactly(alpha)
+        assertThat(vm.state.value.selecting).isFalse()
+        assertThat(beta).isNotEmpty()
+    }
+
+    @Test
+    fun `cancel clears the selection`() = runTest(dispatcher) {
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.preview()
+        vm.onLongPress(vm.state.value.items[0])
+        vm.toggleSelection(vm.state.value.items[1])
         assertThat(vm.state.value.selected).hasSize(2)
         vm.clearSelection()
         assertThat(vm.state.value.selecting).isFalse()
@@ -259,7 +311,7 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `export needs a preview and exports every launcher entry with flips applied`() = runTest(dispatcher) {
+    fun `export needs a preview and exports every launcher entry with edits applied`() = runTest(dispatcher) {
         val vm = viewModel()
         advanceUntilIdle()
         assertThat(vm.state.value.exportEnabled).isFalse()
@@ -267,8 +319,7 @@ class MainViewModelTest {
 
         vm.preview()
         val beta = vm.state.value.items[1]
-        vm.onLongPress(beta)
-        vm.flipSelected()
+        vm.saveEdit(beta.app.key, IconEdit(IconStyle.LIGHT, contrast = 60))
         val options = vm.defaultExportOptions()!!
         assertThat(options).isEqualTo(ExportOptions("HyperIcon · Primary", setOf(IconStyle.DARK)))
         vm.export(options, java.time.LocalDateTime.of(2026, 9, 27, 10, 15))
@@ -281,6 +332,7 @@ class MainViewModelTest {
         val dark = wallpaper[Accent.PRIMARY]!![IconStyle.DARK]
         val light = wallpaper[Accent.PRIMARY]!![IconStyle.LIGHT]
         assertThat(request.apps.map { it.palette }).containsExactly(dark, light, dark).inOrder()
+        assertThat(request.apps.map { it.contrast }).containsExactly(0, 60, 0).inOrder()
         assertThat(request.apps.first().folders).containsExactly("a.native.Main", "a.native").inOrder()
 
         val done = vm.state.value.export as ExportState.Done
@@ -293,22 +345,22 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `exporting both styles makes two themes with swapped pairs`() = runTest(dispatcher) {
+    fun `exporting both styles keeps edited apps on their absolute base`() = runTest(dispatcher) {
         val vm = viewModel()
         advanceUntilIdle()
         vm.preview() // Dark icons
-        vm.onLongPress(vm.state.value.items[1])
-        vm.flipSelected()
+        vm.saveEdit(vm.state.value.items[1].app.key, IconEdit(IconStyle.LIGHT, -4))
         vm.export(ExportOptions("Mine", setOf(IconStyle.LIGHT, IconStyle.DARK)), java.time.LocalDateTime.of(2026, 9, 27, 10, 15))
         advanceUntilIdle()
 
         val (lightReq, darkReq) = exporter.requests
         val dark = wallpaper[Accent.PRIMARY]!![IconStyle.DARK]
         val light = wallpaper[Accent.PRIMARY]!![IconStyle.LIGHT]
+        val edited = IconEdits.withDarkToneOffset(light!!, -4)
         assertThat(lightReq.title).isEqualTo("Mine · Light")
-        assertThat(lightReq.apps.map { it.palette }).containsExactly(light, dark, light).inOrder()
+        assertThat(lightReq.apps.map { it.palette }).containsExactly(light, edited, light).inOrder()
         assertThat(darkReq.title).isEqualTo("Mine · Dark")
-        assertThat(darkReq.apps.map { it.palette }).containsExactly(dark, light, dark).inOrder()
+        assertThat(darkReq.apps.map { it.palette }).containsExactly(dark, edited, dark).inOrder()
         assertThat((vm.state.value.export as ExportState.Done).files.map { it.style })
             .containsExactly(IconStyle.LIGHT, IconStyle.DARK).inOrder()
     }
