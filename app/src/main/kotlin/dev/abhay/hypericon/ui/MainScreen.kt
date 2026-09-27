@@ -1,5 +1,11 @@
 package dev.abhay.hypericon.ui
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,12 +23,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -33,7 +33,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -46,11 +45,12 @@ import dev.abhay.hypericon.model.GlyphSource
 @Composable
 fun MainScreen(viewModel: MainViewModel = viewModel(factory = MainViewModel.Factory)) {
     val state by viewModel.state.collectAsStateWithLifecycle()
-    var selected by remember { mutableStateOf<DrawerItem?>(null) }
+    /** The app whose details sheet is open. */
+    var detailsItem by remember { mutableStateOf<DrawerItem?>(null) }
     var exportOptions by remember { mutableStateOf<ExportOptions?>(null) }
     var collapseRequests by remember { mutableIntStateOf(0) }
     var expandRequests by remember { mutableIntStateOf(0) }
-    val committedColors = state.committedPalette?.let { remember(it) { it.toIconColors() } }
+    val previewed = state.committedPalette != null
     val editorItem = state.editorTarget?.let { key -> state.items.firstOrNull { it.app.key == key } }
 
     // Back leaves selection mode first.
@@ -118,10 +118,10 @@ fun MainScreen(viewModel: MainViewModel = viewModel(factory = MainViewModel.Fact
                 ) { Text("No launcher apps found") }
                 else -> AppGrid(
                     items = state.visibleItems,
-                    colorsFor = { item -> if (committedColors == null) null else state.paletteFor(item.app.key)?.toIconColors() },
-                    contrastFor = { item -> if (committedColors == null) 0 else state.edits[item.app.key]?.contrast ?: 0 },
+                    colorsFor = { item -> if (!previewed) null else state.paletteFor(item.app.key)?.toIconColors() },
+                    contrastFor = { item -> if (!previewed) 0 else state.edits[item.app.key]?.contrast ?: 0 },
                     header = GridHeader(
-                        previewed = committedColors != null,
+                        previewed = previewed,
                         filter = state.filter,
                         counts = mapOf(
                             GridFilter.ALL to state.total,
@@ -141,9 +141,9 @@ fun MainScreen(viewModel: MainViewModel = viewModel(factory = MainViewModel.Fact
                     ),
                     contentPadding = padding,
                     selected = state.selected,
-                    onItemClick = { item -> if (state.selecting) viewModel.toggleSelection(item) else selected = item },
+                    onItemClick = { item -> if (state.selecting) viewModel.toggleSelection(item) else detailsItem = item },
                     // Selecting only makes sense once the themed icons are shown.
-                    onItemLongClick = { item -> if (committedColors != null) viewModel.onLongPress(item) else selected = item },
+                    onItemLongClick = { item -> if (previewed) viewModel.onLongPress(item) else detailsItem = item },
                     // Scrolling the icons collapses the control panel.
                     onUserScroll = { collapseRequests++ },
                 )
@@ -191,21 +191,21 @@ fun MainScreen(viewModel: MainViewModel = viewModel(factory = MainViewModel.Fact
         onSaveCopy = viewModel::saveCopy,
     )
 
-    selected?.let { item ->
+    detailsItem?.let { item ->
         AppDetailsSheet(
             item = item,
             colors = state.paletteFor(item.app.key)?.toIconColors(),
             edit = state.edits[item.app.key],
-            onEdit = if (committedColors != null && item.glyph != null) {
+            onEdit = if (previewed && item.glyph != null) {
                 {
-                    selected = null
+                    detailsItem = null
                     viewModel.openEditor(item.app.key)
                 }
             } else {
                 null
             },
             loadDetails = viewModel::loadDetails,
-            onDismiss = { selected = null },
+            onDismiss = { detailsItem = null },
         )
     }
 }

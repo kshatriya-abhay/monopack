@@ -12,6 +12,7 @@ import dev.abhay.hypericon.glyph.GlyphExtractor
 import dev.abhay.hypericon.model.Glyph
 import dev.abhay.hypericon.model.IconInfo
 import dev.abhay.hypericon.model.LauncherApp
+import dev.abhay.hypericon.render.HyperOsIconShape
 
 /** One app in the drawer, with its original icon and glyph once fetched. */
 data class DrawerItem(
@@ -75,7 +76,7 @@ private fun Drawable.renderOriginal(sizePx: Int): Bitmap {
     if (this !is AdaptiveIconDrawable) return renderPlain(sizePx)
     val bitmap = createBitmap(sizePx, sizePx)
     val canvas = Canvas(bitmap)
-    canvas.clipPath(dev.abhay.hypericon.render.HyperOsIconShape.path(sizePx.toFloat(), sizePx.toFloat()))
+    canvas.clipPath(HyperOsIconShape.path(sizePx.toFloat(), sizePx.toFloat()))
     setBounds(0, 0, sizePx, sizePx)
     draw(canvas)
     return bitmap

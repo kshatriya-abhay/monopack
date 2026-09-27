@@ -30,8 +30,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import dev.abhay.hypericon.model.GlyphSource
 import dev.abhay.hypericon.model.IconEdit
-import dev.abhay.hypericon.model.IconStyle
 import dev.abhay.hypericon.model.IconOrigin
+import dev.abhay.hypericon.model.IconStyle
 import dev.abhay.hypericon.model.LauncherApp
 
 /**
@@ -87,11 +87,7 @@ fun AppDetailsSheet(
             item.glyph?.let { InfoLine("Glyph", it.source.describe()) }
             InfoLine("Package-level icon", if (item.app.isMainActivity) "yes" else "no (secondary launcher entry)")
             if (edit != null) {
-                val tone = when {
-                    edit.darkToneOffset == 0 -> "default dark colour"
-                    edit.darkToneOffset > 0 -> "dark colour +${edit.darkToneOffset}"
-                    else -> "dark colour −${-edit.darkToneOffset}"
-                }
+                val tone = if (edit.darkToneOffset == 0) "default dark colour" else "dark colour ${offsetLabel(edit.darkToneOffset)}"
                 val invert = if (edit.inverted) ", inverted" else ""
                 val contrast = if (edit.contrast > 0) ", contrast ${edit.contrast}%" else ""
                 InfoLine("Edited", "${if (edit.base == IconStyle.DARK) "Dark" else "Light"} icon, $tone$invert$contrast")

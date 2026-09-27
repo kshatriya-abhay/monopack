@@ -5,9 +5,9 @@ import com.google.common.truth.Truth.assertWithMessage
 import com.materialkolor.hct.Hct
 import dev.abhay.hypericon.model.Accent
 import dev.abhay.hypericon.model.IconStyle
-import org.junit.Test
 import kotlin.math.abs
 import kotlin.math.min
+import org.junit.Test
 
 class SeedsTest {
     private fun hueDistance(a: Double, b: Double): Double {

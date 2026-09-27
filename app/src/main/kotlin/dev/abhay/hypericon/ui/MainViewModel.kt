@@ -3,20 +3,20 @@ package dev.abhay.hypericon.ui
 import android.content.res.Configuration
 import android.os.SystemClock
 import android.util.Log
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import dev.abhay.hypericon.apps.AppSource
 import dev.abhay.hypericon.appContainer
+import dev.abhay.hypericon.apps.AppSource
 import dev.abhay.hypericon.data.SavedSelections
 import dev.abhay.hypericon.data.SelectionStore
 import dev.abhay.hypericon.export.ExportApp
 import dev.abhay.hypericon.export.ExportRequest
 import dev.abhay.hypericon.export.ExportSaver
 import dev.abhay.hypericon.export.ThemeExporter
-import dev.abhay.hypericon.mtz.MtzNaming
 import dev.abhay.hypericon.model.Accent
 import dev.abhay.hypericon.model.ColorSource
 import dev.abhay.hypericon.model.GlyphSource
@@ -25,10 +25,16 @@ import dev.abhay.hypericon.model.IconPalette
 import dev.abhay.hypericon.model.IconStyle
 import dev.abhay.hypericon.model.LauncherApp
 import dev.abhay.hypericon.model.Selection
+import dev.abhay.hypericon.mtz.MtzNaming
 import dev.abhay.hypericon.palette.DefaultPalette
 import dev.abhay.hypericon.palette.IconEdits
 import dev.abhay.hypericon.palette.PaletteSource
 import dev.abhay.hypericon.palette.Seed
+import java.io.File
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import kotlin.math.ceil
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -40,8 +46,6 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.ceil
-import kotlin.math.roundToInt
 
 fun IconStyle.opposite(): IconStyle = if (this == IconStyle.LIGHT) IconStyle.DARK else IconStyle.LIGHT
 
@@ -102,7 +106,7 @@ data class UiState(
      * Colours of the committed selection in the *other* icon style, so edited apps can use either
      * style's pair ([committedPairs]).
      */
-    val committedFlipPalette: IconPalette? = null,
+    val committedOppositePalette: IconPalette? = null,
     /** Per-app icon edits (keys of [DrawerItem.app]); session only. */
     val edits: Map<String, IconEdit> = emptyMap(),
     /** The app whose icon is open in the icon editor, or null. */
@@ -127,7 +131,7 @@ data class UiState(
         get() {
             val style = committed?.style ?: return emptyMap()
             val shown = committedPalette ?: return emptyMap()
-            return mapOf(style to shown, style.opposite() to (committedFlipPalette ?: shown))
+            return mapOf(style to shown, style.opposite() to (committedOppositePalette ?: shown))
         }
 
     /** The colours an app is drawn with (its edit applied), or null before a Preview. */
@@ -243,7 +247,7 @@ class MainViewModel(
     fun resetSelectedEdits() = _state.update { it.copy(edits = it.edits - it.selected, selected = emptySet()) }
 
     /** A glyph for the editor's large preview, sharper than the grid's (null if it fails). */
-    suspend fun loadEditorGlyph(app: LauncherApp): androidx.compose.ui.graphics.ImageBitmap? =
+    suspend fun loadEditorGlyph(app: LauncherApp): ImageBitmap? =
         withContext(workDispatcher) { runCatching { loader.glyph(app, glyphSizeFor(editorIconPx)) }.getOrNull() }
 
     fun setIconStyle(style: IconStyle) = edit { it.copy(pending = it.pending.copy(style = style)) }
@@ -267,7 +271,7 @@ class MainViewModel(
             it.copy(
                 committed = it.pending,
                 committedPalette = it.pendingPalette,
-                committedFlipPalette = it.activePalettes[it.pending.accent]?.get(it.pending.style.opposite()),
+                committedOppositePalette = it.activePalettes[it.pending.accent]?.get(it.pending.style.opposite()),
             )
         }
     }
@@ -288,7 +292,7 @@ class MainViewModel(
      * Exports the previewed icons as one `.mtz` per chosen icon style (every launcher entry,
      * icon edits applied) and saves them to Downloads.
      */
-    fun export(options: ExportOptions, now: java.time.LocalDateTime = java.time.LocalDateTime.now()) {
+    fun export(options: ExportOptions, now: LocalDateTime = LocalDateTime.now()) {
         val s = _state.value
         if (!s.exportEnabled || options.styles.isEmpty()) return
         val committed = s.committed ?: return
@@ -300,7 +304,7 @@ class MainViewModel(
         }
         val styles = IconStyle.entries.filter { it in options.styles }
         val requests = styles.map { style ->
-            val title = "${options.name.trim().ifEmpty { "HyperIcon" }} · ${style.displayName}"
+            val title = titleFor(options.name, style)
             style to ExportRequest(
                 title = title,
                 description = "Monochrome icons generated on-device by HyperIcon (${entries.size} apps).",
@@ -341,7 +345,7 @@ class MainViewModel(
     /** Copies an exported file to a document the user picked ("Save as…"). */
     fun saveCopy(file: ExportedFile, uri: String, onResult: (Boolean) -> Unit) {
         viewModelScope.launch {
-            val ok = runCatching { saver.copyTo(java.io.File(file.cachePath), uri) }
+            val ok = runCatching { saver.copyTo(File(file.cachePath), uri) }
                 .onFailure { Log.w(TAG, "Save as failed", it) }
                 .isSuccess
             onResult(ok)
@@ -389,7 +393,7 @@ class MainViewModel(
         selectionSettled = true
         val customPalettes = withContext(workDispatcher) { saved.pending.seed.palettes() }
         val committed = saved.committed
-        val flipPalette = committed?.let { c ->
+        val oppositePalette = committed?.let { c ->
             val source = if (c.source == ColorSource.CUSTOM) withContext(workDispatcher) { c.seed.palettes() } else _state.value.palettes
             source[c.accent]?.get(c.style.opposite())
         }
@@ -399,7 +403,7 @@ class MainViewModel(
                 customPalettes = customPalettes,
                 committed = committed,
                 committedPalette = saved.committedPalette,
-                committedFlipPalette = flipPalette,
+                committedOppositePalette = oppositePalette,
             )
         }
     }
@@ -457,12 +461,14 @@ class MainViewModel(
         }.joinToString(" · ")
 
         /** "HyperIcon · Blue · Primary · Dark". */
-        fun exportTitle(selection: Selection): String = "${exportName(selection)} · ${selection.style.displayName}"
+        fun exportTitle(selection: Selection): String = titleFor(exportName(selection), selection.style)
+
+        private fun titleFor(name: String, style: IconStyle) = "${name.trim().ifEmpty { "HyperIcon" }} · ${style.displayName}"
 
         /** "HyperIcon-Blue-Primary-Dark-20260927-1015.mtz" (letters and digits of each part). */
-        fun fileNameFor(title: String, now: java.time.LocalDateTime): String {
+        fun fileNameFor(title: String, now: LocalDateTime): String {
             val parts = title.split("·").map { part -> part.filter { it.isLetterOrDigit() } }.filter { it.isNotEmpty() }
-            val stamp = now.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmm"))
+            val stamp = now.format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmm"))
             return (parts.ifEmpty { listOf("HyperIcon") } + stamp).joinToString("-") + ".mtz"
         }
 

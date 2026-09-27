@@ -1,20 +1,19 @@
 package dev.abhay.hypericon.ui
 
-import dev.abhay.hypericon.glyph.MaskContrast
-import dev.abhay.hypericon.glyph.GlyphExtractor
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.runtime.remember
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import dev.abhay.hypericon.glyph.GlyphExtractor
 import dev.abhay.hypericon.render.HyperOsShape
 import kotlin.math.roundToInt
 
@@ -29,7 +28,7 @@ fun rememberContrastGlyph(glyph: ImageBitmap?, contrast: Int): ImageBitmap? = re
     if (glyph == null || contrast <= 0) {
         glyph
     } else {
-        GlyphExtractor.withContrast(glyph.asAndroidBitmap(), contrast / MaskContrast.MAX.toFloat()).asImageBitmap()
+        GlyphExtractor.withContrast(glyph.asAndroidBitmap(), contrast).asImageBitmap()
     }
 }
 

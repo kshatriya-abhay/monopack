@@ -11,12 +11,12 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.ShapeDrawable
 import android.graphics.drawable.shapes.RectShape
 import androidx.core.graphics.createBitmap
-import org.robolectric.RuntimeEnvironment
 import com.google.common.truth.Truth.assertThat
 import dev.abhay.hypericon.model.GlyphSource
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 

@@ -6,6 +6,9 @@ import com.google.common.truth.Truth.assertThat
 import dev.abhay.hypericon.apps.IconSourceLoader
 import dev.abhay.hypericon.model.IconPalette
 import dev.abhay.hypericon.model.LauncherApp
+import java.io.ByteArrayInputStream
+import java.util.zip.ZipFile
+import java.util.zip.ZipInputStream
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -13,9 +16,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
-import java.io.ByteArrayInputStream
-import java.util.zip.ZipFile
-import java.util.zip.ZipInputStream
 
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)

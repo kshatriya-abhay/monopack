@@ -1,9 +1,9 @@
 package dev.abhay.hypericon.apps
 
 import com.google.common.truth.Truth.assertThat
-import org.junit.Test
 import java.text.Collator
 import java.util.Locale
+import org.junit.Test
 
 class OrderAndMarkMainTest {
     private val collator = Collator.getInstance(Locale.US)

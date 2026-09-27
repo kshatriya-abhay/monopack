@@ -25,13 +25,13 @@ import dev.abhay.hypericon.model.IconStyle
 import dev.abhay.hypericon.model.LauncherApp
 import dev.abhay.hypericon.palette.SeedPresets
 import dev.abhay.hypericon.ui.theme.HyperIconTheme
+import java.io.File
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
-import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)

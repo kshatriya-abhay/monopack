@@ -5,9 +5,9 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import dev.abhay.hypericon.model.LauncherApp
+import java.text.Collator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.text.Collator
 
 /** Source of launcher apps (an interface so the ViewModel can be tested with fakes). */
 interface AppSource {

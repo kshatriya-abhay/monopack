@@ -7,9 +7,9 @@ import dev.abhay.hypericon.model.Accent
 import dev.abhay.hypericon.model.IconEdit
 import dev.abhay.hypericon.model.IconPalette
 import dev.abhay.hypericon.model.IconStyle
-import org.junit.Test
 import kotlin.math.abs
 import kotlin.math.min
+import org.junit.Test
 
 class IconEditsTest {
     private val palettes = SeedPresets.DEFAULT.palettes()

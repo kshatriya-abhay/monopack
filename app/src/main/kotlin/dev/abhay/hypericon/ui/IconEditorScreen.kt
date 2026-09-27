@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -152,10 +153,8 @@ fun IconEditorScreen(
                     LabelledIcon(smallGlyph, draftColors, item.app.label, highlighted = true)
                     darkRefs.forEach { ref -> LabelledIcon(ref.glyphImage, darkPair.toIconColors(), ref.app.label) }
                 }
-                Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
-                    Text("← Light icons", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-                    Text("Dark icons →", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                Spacer(Modifier.height(4.dp))
+                EndLabels("← Light icons", "Dark icons →")
                 Spacer(Modifier.height(24.dp))
             }
 
@@ -169,12 +168,7 @@ fun IconEditorScreen(
                     ) { Text(if (style == IconStyle.LIGHT) "Light icon" else "Dark icon") }
                 }
             }
-            Text(
-                "Used for this app in both Light and Dark icon styles.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 6.dp),
-            )
+            EditorHint("Used for this app in both Light and Dark icon styles.", Modifier.padding(top = 6.dp))
             Spacer(Modifier.height(24.dp))
 
             Row(
@@ -185,12 +179,7 @@ fun IconEditorScreen(
             ) {
                 Column(Modifier.weight(1f).padding(end = 16.dp)) {
                     Text("Invert glyph", style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        "Swaps the glyph and plate areas. Use it when the icon looks filled in.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 2.dp),
-                    )
+                    EditorHint("Swaps the glyph and plate areas. Use it when the icon looks filled in.", Modifier.padding(top = 2.dp))
                 }
                 Switch(checked = inverted, onCheckedChange = null)
             }
@@ -199,29 +188,22 @@ fun IconEditorScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 EditorLabel("Glyph contrast", Modifier.weight(1f))
                 Text(
-                    if (contrast == 0) "Off" else "$contrast%",
+                    contrastLabel(contrast),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            Text(
-                "Separates glyph and plate when the icon's colours blend together.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            EditorHint("Separates glyph and plate when the icon's colours blend together.")
             Slider(
                 value = contrast.toFloat(),
                 onValueChange = { contrast = it.roundToInt() },
                 valueRange = 0f..MaskContrast.MAX.toFloat(),
                 modifier = Modifier.semantics {
                     contentDescription = "Glyph contrast"
-                    stateDescription = if (contrast == 0) "Off" else "$contrast%"
+                    stateDescription = contrastLabel(contrast)
                 },
             )
-            Row {
-                Text("Original", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-                Text("Strongest", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            EndLabels("Original", "Strongest")
             Spacer(Modifier.height(24.dp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -244,10 +226,7 @@ fun IconEditorScreen(
                     stateDescription = offsetLabel(offset)
                 },
             )
-            Row {
-                Text("Darker", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-                Text("Lighter", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            EndLabels("Darker", "Lighter")
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 ToneSwatch("Plate", edited.background)
@@ -257,12 +236,7 @@ fun IconEditorScreen(
             if (edit != null) {
                 Spacer(Modifier.height(32.dp))
                 OutlinedButton(onClick = onReset, modifier = Modifier.fillMaxWidth()) { Text("Reset to default") }
-                Text(
-                    "Follows the global icon style again, with the default colours.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
+                EditorHint("Follows the global icon style again, with the default colours.", Modifier.padding(top = 6.dp))
             }
         }
     }
@@ -282,10 +256,27 @@ fun IconEditorScreen(
     }
 }
 
-private fun offsetLabel(offset: Int) = when {
+/** "Default", "+4" or "−6" (a real minus sign). */
+fun offsetLabel(offset: Int) = when {
     offset == 0 -> "Default"
     offset > 0 -> "+$offset"
     else -> "−${-offset}"
+}
+
+private fun contrastLabel(contrast: Int) = if (contrast == 0) "Off" else "$contrast%"
+
+@Composable
+private fun EditorHint(text: String, modifier: Modifier = Modifier) {
+    Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = modifier)
+}
+
+/** Captions at both ends of a row (slider ends, comparison row sides). */
+@Composable
+private fun EndLabels(start: String, end: String) {
+    Row {
+        EditorHint(start, Modifier.weight(1f))
+        EditorHint(end)
+    }
 }
 
 @Composable
@@ -298,7 +289,7 @@ private fun LabelledIcon(glyph: ImageBitmap?, colors: IconColors, label: String,
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(size + 8.dp)) {
         Box(
             if (highlighted) {
-                Modifier.border(2.dp, MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.RoundedCornerShape(18.dp)).padding(3.dp)
+                Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(18.dp)).padding(3.dp)
             } else {
                 Modifier.padding(3.dp)
             },

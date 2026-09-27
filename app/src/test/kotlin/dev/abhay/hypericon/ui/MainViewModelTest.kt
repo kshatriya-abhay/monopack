@@ -12,18 +12,18 @@ import dev.abhay.hypericon.export.ExportRequest
 import dev.abhay.hypericon.export.ExportSaver
 import dev.abhay.hypericon.export.SavedExport
 import dev.abhay.hypericon.export.ThemeExporter
-import java.io.File
 import dev.abhay.hypericon.model.Accent
 import dev.abhay.hypericon.model.ColorSource
 import dev.abhay.hypericon.model.Glyph
 import dev.abhay.hypericon.model.GlyphSource
 import dev.abhay.hypericon.model.IconEdit
 import dev.abhay.hypericon.model.IconStyle
-import dev.abhay.hypericon.palette.IconEdits
 import dev.abhay.hypericon.model.LauncherApp
 import dev.abhay.hypericon.model.Selection
+import dev.abhay.hypericon.palette.IconEdits
 import dev.abhay.hypericon.palette.PaletteSource
 import dev.abhay.hypericon.palette.SeedPresets
+import java.io.File
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -307,7 +307,7 @@ class MainViewModelTest {
         val palette = seed.palettes()[Accent.SECONDARY]!![IconStyle.LIGHT]!!
         val vm = viewModel(FakeStore(SavedSelections(selection, selection, palette)))
         advanceUntilIdle()
-        assertThat(vm.state.value.committedFlipPalette).isEqualTo(seed.palettes()[Accent.SECONDARY]!![IconStyle.DARK])
+        assertThat(vm.state.value.committedOppositePalette).isEqualTo(seed.palettes()[Accent.SECONDARY]!![IconStyle.DARK])
     }
 
     @Test

@@ -8,6 +8,7 @@ import android.graphics.drawable.Drawable
 import androidx.core.graphics.createBitmap
 import dev.abhay.hypericon.model.Glyph
 import dev.abhay.hypericon.model.GlyphSource
+import java.nio.ByteBuffer
 import kotlin.math.max
 import kotlin.math.sqrt
 
@@ -25,20 +26,6 @@ import kotlin.math.sqrt
  * Ported from AOSP `frameworks/libs/systemui/iconloaderlib` (Apache License 2.0).
  */
 object GlyphExtractor {
-
-    /**
-     * A copy of the square ALPHA_8 [mask] with the editor's glyph contrast [amount] (0..1)
-     * applied (see [MaskContrast]); [mask] itself when there's nothing to change.
-     */
-    fun withContrast(mask: Bitmap, amount: Float): Bitmap {
-        if (amount <= 0f || mask.config != Bitmap.Config.ALPHA_8 || mask.width != mask.height) return mask
-        val size = mask.width
-        val pixels = ByteArray(size * size)
-        mask.copyPixelsToBuffer(java.nio.ByteBuffer.wrap(pixels))
-        val out = createBitmap(size, size, Bitmap.Config.ALPHA_8)
-        out.copyPixelsFromBuffer(java.nio.ByteBuffer.wrap(MaskContrast.apply(pixels, size, amount)))
-        return out
-    }
 
     /** `AdaptiveIconDrawable.getExtraInsetFraction()`: the layer is 1 + 2×0.25 = 1.5× the viewport. */
     private const val EXTRA_INSET = 0.25f
@@ -71,6 +58,20 @@ object GlyphExtractor {
         }
     } catch (e: Exception) {
         Glyph(createBitmap(size, size, Bitmap.Config.ALPHA_8), GlyphSource.FAILED)
+    }
+
+    /**
+     * A copy of the square ALPHA_8 [mask] with the editor's glyph [contrast] (0..100) applied
+     * (see [MaskContrast]); [mask] itself when there's nothing to change.
+     */
+    fun withContrast(mask: Bitmap, contrast: Int): Bitmap {
+        if (contrast <= 0 || mask.config != Bitmap.Config.ALPHA_8 || mask.width != mask.height) return mask
+        val size = mask.width
+        val pixels = ByteArray(size * size)
+        mask.copyPixelsToBuffer(ByteBuffer.wrap(pixels))
+        val out = createBitmap(size, size, Bitmap.Config.ALPHA_8)
+        out.copyPixelsFromBuffer(ByteBuffer.wrap(MaskContrast.apply(pixels, size, contrast / MaskContrast.MAX.toFloat())))
+        return out
     }
 
     private fun drawAlpha(drawable: Drawable, size: Int): Bitmap {
@@ -149,7 +150,7 @@ object GlyphExtractor {
         icon.setBounds(0, 0, width, height)
         icon.draw(canvas)
         val pixels = ByteArray(n * n)
-        bitmap.copyPixelsToBuffer(java.nio.ByteBuffer.wrap(pixels))
+        bitmap.copyPixelsToBuffer(ByteBuffer.wrap(pixels))
 
         val leftBorder = FloatArray(height) { -1f }
         val rightBorder = FloatArray(height) { -1f }

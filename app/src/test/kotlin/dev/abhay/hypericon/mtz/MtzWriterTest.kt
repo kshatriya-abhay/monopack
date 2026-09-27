@@ -1,12 +1,12 @@
 package dev.abhay.hypericon.mtz
 
 import com.google.common.truth.Truth.assertThat
-import org.junit.Test
-import org.w3c.dom.Element
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.util.zip.ZipInputStream
 import javax.xml.parsers.DocumentBuilderFactory
+import org.junit.Test
+import org.w3c.dom.Element
 
 class MtzWriterTest {
     private fun parse(xml: String) =

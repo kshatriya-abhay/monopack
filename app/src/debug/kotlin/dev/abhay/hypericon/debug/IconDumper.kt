@@ -9,8 +9,8 @@ import android.util.Log
 import androidx.core.graphics.createBitmap
 import dev.abhay.hypericon.appContainer
 import dev.abhay.hypericon.glyph.GlyphExtractor
-import kotlinx.coroutines.runBlocking
 import java.io.File
+import kotlinx.coroutines.runBlocking
 
 /**
  * Debug-only: writes each app's raw icon layers and generated glyph to

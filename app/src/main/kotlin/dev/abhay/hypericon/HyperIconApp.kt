@@ -7,8 +7,8 @@ import dev.abhay.hypericon.apps.LauncherAppRepository
 import dev.abhay.hypericon.data.DataStoreSelectionStore
 import dev.abhay.hypericon.export.DownloadsSaver
 import dev.abhay.hypericon.export.MtzExporter
-import dev.abhay.hypericon.ui.DrawerItemLoader
 import dev.abhay.hypericon.palette.PaletteProvider
+import dev.abhay.hypericon.ui.DrawerItemLoader
 
 class HyperIconApp : Application() {
     val container by lazy { AppContainer(this) }
