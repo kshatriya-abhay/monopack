@@ -1,7 +1,6 @@
 [tools]
 java = "temurin-21"   # JDK for Gradle/AGP
 gradle = "9.8.0"      # only used to bootstrap the wrapper; builds use ./gradlew
-python = "3.14"       # tools/inspect_mtz.py (stdlib only)
 
 [env]
 ANDROID_HOME = "{{env.HOME}}/Android/Sdk"
@@ -30,6 +29,3 @@ run = "./gradlew installDebug"
 description = "Install and launch on the connected device"
 depends = ["install"]
 run = "adb shell am start -n dev.abhay.hypericon/.MainActivity"
-
-[tasks.inspect]
-run = "python tools/inspect_mtz.py"
