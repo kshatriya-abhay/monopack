@@ -271,7 +271,7 @@ class MainViewModelTest {
         var state = vm.state.value
         assertThat(state.editorTarget).isNull()
         val lightPrimary = wallpaper[Accent.PRIMARY]!![IconStyle.LIGHT]!!
-        assertThat(state.paletteFor(alpha)).isEqualTo(IconEdits.withDarkToneOffset(lightPrimary, -5))
+        assertThat(state.paletteFor(alpha)).isEqualTo(IconEdits.withToneOffsets(lightPrimary, -5, 0))
         assertThat(state.paletteFor(beta)).isEqualTo(wallpaper[Accent.PRIMARY]!![IconStyle.DARK])
 
         // Switching the global style keeps the absolute base; a new accent recolours with the offset kept.
@@ -280,11 +280,11 @@ class MainViewModelTest {
         vm.preview()
         state = vm.state.value
         val lightTertiary = wallpaper[Accent.TERTIARY]!![IconStyle.LIGHT]!!
-        assertThat(state.paletteFor(alpha)).isEqualTo(IconEdits.withDarkToneOffset(lightTertiary, -5))
+        assertThat(state.paletteFor(alpha)).isEqualTo(IconEdits.withToneOffsets(lightTertiary, -5, 0))
         vm.setIconStyle(IconStyle.DARK)
         vm.preview()
         val darkTertiary = wallpaper[Accent.TERTIARY]!![IconStyle.DARK]!!
-        assertThat(vm.state.value.paletteFor(alpha)).isEqualTo(IconEdits.withDarkToneOffset(lightTertiary, -5))
+        assertThat(vm.state.value.paletteFor(alpha)).isEqualTo(IconEdits.withToneOffsets(lightTertiary, -5, 0))
         assertThat(vm.state.value.paletteFor(beta)).isEqualTo(darkTertiary)
 
         // Reset brings it back to the global style.
@@ -367,11 +367,11 @@ class MainViewModelTest {
         advanceUntilIdle()
         vm.preview()
         val (alpha, beta) = vm.state.value.items.map { it.app.key }
-        vm.saveEdit(alpha, IconEdit(IconStyle.LIGHT, -4, inverted = true, contrast = 70))
+        vm.saveEdit(alpha, IconEdit(IconStyle.LIGHT, -4, 3, inverted = true, contrast = 70))
         vm.saveEdit(beta, IconEdit(IconStyle.DARK))
         vm.resetEdit(beta)
         advanceUntilIdle()
-        assertThat(store.edits).containsExactly(alpha, IconEdit(IconStyle.LIGHT, -4, inverted = true, contrast = 70))
+        assertThat(store.edits).containsExactly(alpha, IconEdit(IconStyle.LIGHT, -4, 3, inverted = true, contrast = 70))
 
         val restarted = viewModel(store)
         advanceUntilIdle()
@@ -494,7 +494,7 @@ class MainViewModelTest {
         val (lightReq, darkReq) = exporter.requests
         val dark = wallpaper[Accent.PRIMARY]!![IconStyle.DARK]
         val light = wallpaper[Accent.PRIMARY]!![IconStyle.LIGHT]
-        val edited = IconEdits.withDarkToneOffset(light!!, -4)
+        val edited = IconEdits.withToneOffsets(light!!, -4, 0)
         assertThat(lightReq.title).isEqualTo("Mine · Light")
         assertThat(lightReq.apps.map { it.palette }).containsExactly(light, edited, light).inOrder()
         assertThat(darkReq.title).isEqualTo("Mine · Dark")

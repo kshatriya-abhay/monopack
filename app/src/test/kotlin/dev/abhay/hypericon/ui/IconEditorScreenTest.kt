@@ -14,6 +14,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.core.graphics.createBitmap
 import com.google.common.truth.Truth.assertThat
@@ -95,9 +96,12 @@ class IconEditorScreenTest {
         snapshot("editor-default")
 
         compose.onNodeWithText("Dark icon").performClick()
-        compose.onNodeWithContentDescription("Dark colour brightness")
+        compose.onNodeWithContentDescription("Plate colour brightness")
             .performSemanticsAction(SemanticsActions.SetProgress) { it(-6f) }
-        compose.onNodeWithText("−6").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Glyph colour brightness")
+            .performSemanticsAction(SemanticsActions.SetProgress) { it(3f) }
+        compose.onNodeWithText("· −6", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("· +3", substring = true).assertIsDisplayed()
         compose.onNodeWithText("Invert glyph").performClick()
         compose.onNodeWithContentDescription("Glyph contrast")
             .performSemanticsAction(SemanticsActions.SetProgress) { it(100f) }
@@ -105,7 +109,7 @@ class IconEditorScreenTest {
         snapshot("editor-edited")
 
         compose.onNodeWithText("Save").performClick()
-        assertThat(saved).isEqualTo(IconEdit(IconStyle.DARK, -6, inverted = true, contrast = 100))
+        assertThat(saved).isEqualTo(IconEdit(IconStyle.DARK, glyphToneOffset = 3, plateToneOffset = -6, inverted = true, contrast = 100))
     }
 
     @Test
@@ -128,9 +132,9 @@ class IconEditorScreenTest {
 
     @Test
     fun anExistingEditCanBeReset() {
-        show(IconEdit(IconStyle.DARK, 4))
-        compose.onNodeWithText("+4").assertIsDisplayed()
-        compose.onNodeWithText("Reset to default").performClick()
+        show(IconEdit(IconStyle.DARK, plateToneOffset = 4))
+        compose.onNodeWithText("· +4", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Reset to default").performScrollTo().performClick()
         assertThat(reset).isTrue()
     }
 

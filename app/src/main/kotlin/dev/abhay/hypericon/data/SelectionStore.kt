@@ -150,8 +150,10 @@ class DataStoreSelectionStore(context: Context) : SelectionStore {
 }
 
 /**
- * Icon edits as JSON: `{"<key>": {"base": "DARK", "offset": -6, "inverted": true, "contrast": 60}}`.
+ * Icon edits as JSON: `{"<key>": {"base": "DARK", "glyph": 4, "plate": -6, "inverted": true, "contrast": 60}}`.
  * Entries that can't be read (unknown base, wrong types) are skipped rather than failing the rest.
+ * Edits saved before the glyph/plate split have one `offset` for the darker colour of the base
+ * pair; it's moved to whichever layer shows that colour.
  */
 internal object EditsJson {
     fun encode(edits: Map<String, IconEdit>): String = JSONObject().apply {
@@ -160,7 +162,8 @@ internal object EditsJson {
                 key,
                 JSONObject()
                     .put("base", edit.base.name)
-                    .put("offset", edit.darkToneOffset)
+                    .put("glyph", edit.glyphToneOffset)
+                    .put("plate", edit.plateToneOffset)
                     .put("inverted", edit.inverted)
                     .put("contrast", edit.contrast),
             )
@@ -173,12 +176,17 @@ internal object EditsJson {
             for (key in root.keys()) {
                 val entry = root.optJSONObject(key) ?: continue
                 val base = IconStyle.entries.firstOrNull { it.name == entry.optString("base") } ?: continue
+                val inverted = entry.optBoolean("inverted", false)
+                val legacy = entry.optInt("offset", 0)
+                // The darker colour is the Light pair's glyph and the Dark pair's plate, swapped by Invert.
+                val legacyOnGlyph = (base == IconStyle.LIGHT) != inverted
                 put(
                     key,
                     IconEdit(
                         base = base,
-                        darkToneOffset = entry.optInt("offset", 0),
-                        inverted = entry.optBoolean("inverted", false),
+                        glyphToneOffset = entry.optInt("glyph", if (legacyOnGlyph) legacy else 0),
+                        plateToneOffset = entry.optInt("plate", if (legacyOnGlyph) 0 else legacy),
+                        inverted = inverted,
                         contrast = entry.optInt("contrast", 0),
                     ),
                 )

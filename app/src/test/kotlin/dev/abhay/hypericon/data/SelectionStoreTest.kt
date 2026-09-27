@@ -40,7 +40,7 @@ class SelectionStoreTest {
 
         assertThat(store.loadEdits()).isEmpty()
         val edits = mapOf(
-            "com.a/.Main" to IconEdit(IconStyle.DARK, -6, inverted = true, contrast = 80),
+            "com.a/.Main" to IconEdit(IconStyle.DARK, 4, -6, inverted = true, contrast = 80),
             "com.b/com.other.Alias" to IconEdit(IconStyle.LIGHT),
         )
         store.saveEdits(edits)
@@ -58,7 +58,23 @@ class SelectionStoreTest {
     @Test
     fun `unreadable edits are skipped`() {
         assertThat(EditsJson.decode("not json")).isEmpty()
-        val json = """{"ok/.A": {"base": "LIGHT", "offset": 3}, "bad/.B": {"base": "PURPLE"}, "worse/.C": 5}"""
-        assertThat(EditsJson.decode(json)).containsExactly("ok/.A", IconEdit(IconStyle.LIGHT, 3))
+        val json = """{"ok/.A": {"base": "LIGHT", "glyph": 3, "plate": -2}, "bad/.B": {"base": "PURPLE"}, "worse/.C": 5}"""
+        assertThat(EditsJson.decode(json)).containsExactly("ok/.A", IconEdit(IconStyle.LIGHT, 3, -2))
+    }
+
+    @Test
+    fun `edits saved with one dark-colour offset move it to the layer showing that colour`() {
+        val json = """{
+            "l/.A": {"base": "LIGHT", "offset": -5},
+            "d/.B": {"base": "DARK", "offset": -6},
+            "li/.C": {"base": "LIGHT", "offset": 4, "inverted": true},
+            "di/.D": {"base": "DARK", "offset": 2, "inverted": true}
+        }"""
+        assertThat(EditsJson.decode(json)).containsExactly(
+            "l/.A", IconEdit(IconStyle.LIGHT, glyphToneOffset = -5),
+            "d/.B", IconEdit(IconStyle.DARK, plateToneOffset = -6),
+            "li/.C", IconEdit(IconStyle.LIGHT, plateToneOffset = 4, inverted = true),
+            "di/.D", IconEdit(IconStyle.DARK, glyphToneOffset = 2, inverted = true),
+        )
     }
 }

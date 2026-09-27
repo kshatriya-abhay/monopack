@@ -87,7 +87,11 @@ fun AppDetailsSheet(
             item.glyph?.let { InfoLine("Glyph", it.source.describe()) }
             InfoLine("Package-level icon", if (item.app.isMainActivity) "yes" else "no (secondary launcher entry)")
             if (edit != null) {
-                val tone = if (edit.darkToneOffset == 0) "default dark colour" else "dark colour ${offsetLabel(edit.darkToneOffset)}"
+                val tones = buildList {
+                    if (edit.glyphToneOffset != 0) add("glyph ${offsetLabel(edit.glyphToneOffset)}")
+                    if (edit.plateToneOffset != 0) add("plate ${offsetLabel(edit.plateToneOffset)}")
+                }
+                val tone = if (tones.isEmpty()) "default colours" else tones.joinToString(", ")
                 val invert = if (edit.inverted) ", inverted" else ""
                 val contrast = if (edit.contrast > 0) ", contrast ${edit.contrast}%" else ""
                 InfoLine("Edited", "${if (edit.base == IconStyle.DARK) "Dark" else "Light"} icon, $tone$invert$contrast")

@@ -80,9 +80,12 @@ class GlyphExtractorTest {
         val glyph = GlyphExtractor.extract(legacy, size)
 
         assertThat(glyph.source).isEqualTo(GlyphSource.FORCED_MONO)
-        // Circle (full-bleed: 75% of the layer) is opaque; the white square inside is a hole.
+        // The circle fills the viewport exactly (not AOSP's 75% of the layer, which crops its rim).
+        val opaque = (0 until size).filter { alphaAt(glyph.mask, it, center) > 127 }
+        assertThat((opaque.last() - opaque.first() + 1).toFloat()).isWithin(4f).of(size / 1.5f)
+        // The circle is opaque; the white square inside is a hole.
         assertThat(alphaAt(glyph.mask, center, center)).isLessThan(30)
-        assertThat(alphaAt(glyph.mask, center + size / 4, center)).isGreaterThan(200)
+        assertThat(alphaAt(glyph.mask, center + size / 5, center)).isGreaterThan(200)
         // Outside the circle is the white wrapper background: transparent.
         assertThat(alphaAt(glyph.mask, size / 6 + 4, size / 6 + 4)).isLessThan(30)
     }

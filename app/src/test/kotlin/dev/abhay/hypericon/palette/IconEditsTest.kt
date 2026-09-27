@@ -32,72 +32,90 @@ class IconEditsTest {
         assertThat(IconEdits.resolve(pairs, IconStyle.DARK, edit)).isEqualTo(dark)
     }
 
-    @Test
-    fun `offset changes only the darker colour and keeps its hue`() {
-        // Light icon: the glyph is the dark colour.
-        val editedLight = IconEdits.resolve(pairs, IconStyle.LIGHT, IconEdit(IconStyle.LIGHT, -6))!!
-        assertThat(editedLight.background).isEqualTo(light.background)
-        assertThat(Hct.fromInt(editedLight.foreground).tone).isWithin(0.6).of(Hct.fromInt(light.foreground).tone - 6)
-        assertThat(hueDistance(Hct.fromInt(editedLight.foreground).hue, Hct.fromInt(light.foreground).hue)).isLessThan(2.0)
+    private fun tone(color: Int) = Hct.fromInt(color).tone
 
-        // Dark icon: the plate is the dark colour.
-        val editedDark = IconEdits.resolve(pairs, IconStyle.LIGHT, IconEdit(IconStyle.DARK, 5))!!
-        assertThat(editedDark.foreground).isEqualTo(dark.foreground)
-        assertThat(Hct.fromInt(editedDark.background).tone).isWithin(0.6).of(Hct.fromInt(dark.background).tone + 5)
+    @Test
+    fun `glyph and plate offsets change only their colour and keep its hue`() {
+        val glyphOnly = IconEdits.resolve(pairs, IconStyle.LIGHT, IconEdit(IconStyle.LIGHT, glyphToneOffset = -6))!!
+        assertThat(glyphOnly.background).isEqualTo(light.background)
+        assertThat(tone(glyphOnly.foreground)).isWithin(0.6).of(tone(light.foreground) - 6)
+        assertThat(hueDistance(Hct.fromInt(glyphOnly.foreground).hue, Hct.fromInt(light.foreground).hue)).isLessThan(2.0)
+
+        val plateOnly = IconEdits.resolve(pairs, IconStyle.LIGHT, IconEdit(IconStyle.DARK, plateToneOffset = 5))!!
+        assertThat(plateOnly.foreground).isEqualTo(dark.foreground)
+        assertThat(tone(plateOnly.background)).isWithin(0.6).of(tone(dark.background) + 5)
+
+        val both = IconEdits.resolve(pairs, IconStyle.LIGHT, IconEdit(IconStyle.LIGHT, glyphToneOffset = -4, plateToneOffset = -3))!!
+        assertThat(tone(both.foreground)).isWithin(0.6).of(tone(light.foreground) - 4)
+        assertThat(tone(both.background)).isWithin(0.6).of(tone(light.background) - 3)
     }
 
     @Test
     fun `tone is clamped at black`() {
-        val edited = IconEdits.withDarkToneOffset(dark, -100)
-        assertThat(Hct.fromInt(edited.background).tone).isWithin(0.6).of(0.0)
+        val edited = IconEdits.withToneOffsets(dark, glyph = 0, plate = -100)
+        assertThat(tone(edited.background)).isWithin(0.6).of(0.0)
     }
 
     @Test
     fun `allowed offsets always keep enough contrast`() {
         val seeds = SeedPresets.AOSP + (0 until 360 step 15).map { SeedColors.custom(it.toDouble()) }
         for (seed in seeds) for ((accent, styles) in seed.palettes()) for ((style, pair) in styles) {
-            val range = IconEdits.allowedOffsets(pair)
-            assertWithMessage("${seed.name} $accent $style").that(range.contains(0)).isTrue()
-            for (offset in listOf(range.first, range.last)) {
-                val edited = IconEdits.withDarkToneOffset(pair, offset)
-                assertWithMessage("${seed.name} $accent $style $offset")
-                    .that(Contrast.ratio(edited.background, edited.foreground)).isAtLeast(IconEdits.MIN_CONTRAST)
+            for (layer in IconEdits.Layer.entries) {
+                val range = IconEdits.allowedOffsets(pair, layer)
+                assertWithMessage("${seed.name} $accent $style $layer").that(range.contains(0)).isTrue()
+                for (offset in listOf(range.first, range.last)) {
+                    val edited = if (layer == IconEdits.Layer.GLYPH) IconEdits.withToneOffsets(pair, offset, 0) else IconEdits.withToneOffsets(pair, 0, offset)
+                    assertWithMessage("${seed.name} $accent $style $layer $offset")
+                        .that(Contrast.ratio(edited.background, edited.foreground)).isAtLeast(IconEdits.MIN_CONTRAST)
+                }
+                assertThat(range.first).isAtLeast(IconEdits.MIN_OFFSET)
+                assertThat(range.last).isAtMost(IconEdits.MAX_OFFSET)
             }
-            assertThat(range.first).isAtLeast(IconEdits.MIN_OFFSET)
-            assertThat(range.last).isAtMost(IconEdits.MAX_OFFSET)
         }
     }
 
     @Test
-    fun `lightening the dark colour is limited by contrast`() {
-        // Material's own pairs allow the full range (tone 30 → 50 on tone 90 still has > 3:1).
-        assertThat(IconEdits.allowedOffsets(light)).isEqualTo(IconEdits.MIN_OFFSET..IconEdits.MAX_OFFSET)
-        // A closer pair (glyph tone 45 on plate tone 90) is capped well before +20.
+    fun `moving the colours towards each other is limited by contrast`() {
+        // Material's own pairs allow the full glyph range (tone 30 → 50 on tone 90 still has > 3:1).
+        assertThat(IconEdits.allowedOffsets(light, IconEdits.Layer.GLYPH)).isEqualTo(IconEdits.MIN_OFFSET..IconEdits.MAX_OFFSET)
+        // A closer pair (glyph tone 45 on plate tone 90) is capped well before +20 and before −20.
         val close = IconPalette(Hct.from(260.0, 16.0, 90.0).toInt(), Hct.from(260.0, 36.0, 45.0).toInt())
-        val range = IconEdits.allowedOffsets(close)
-        assertThat(range.last).isIn(1..10)
-        val atLimit = IconEdits.withDarkToneOffset(close, range.last + 1)
+        val glyph = IconEdits.allowedOffsets(close, IconEdits.Layer.GLYPH)
+        assertThat(glyph.last).isIn(1..10)
+        val atLimit = IconEdits.withToneOffsets(close, glyph.last + 1, 0)
         assertThat(Contrast.ratio(atLimit.background, atLimit.foreground)).isLessThan(IconEdits.MIN_CONTRAST)
+        val plate = IconEdits.allowedOffsets(close, IconEdits.Layer.PLATE)
+        assertThat(plate.first).isGreaterThan(IconEdits.MIN_OFFSET)
     }
 
     @Test
-    fun `a new palette recolours an edited icon but keeps base and offset`() {
+    fun `each range depends on the other slider`() {
+        val close = IconPalette(Hct.from(260.0, 16.0, 90.0).toInt(), Hct.from(260.0, 36.0, 45.0).toInt())
+        val alone = IconEdits.allowedOffsets(close, IconEdits.Layer.GLYPH)
+        val withDarkerPlate = IconEdits.allowedOffsets(close, IconEdits.Layer.GLYPH, otherOffset = -6)
+        assertThat(withDarkerPlate.last).isLessThan(alone.last)
+        // The current value stays inside its range even when 0 no longer is.
+        val shifted = IconEdits.allowedOffsets(close, IconEdits.Layer.GLYPH, otherOffset = 0, current = -15)
+        assertThat(shifted).contains(-15)
+    }
+
+    @Test
+    fun `a new palette recolours an edited icon but keeps base and offsets`() {
         val other = SeedPresets.AOSP[0].palettes().getValue(Accent.TERTIARY)
-        val edit = IconEdit(IconStyle.DARK, -4)
+        val edit = IconEdit(IconStyle.DARK, plateToneOffset = -4)
         val resolved = IconEdits.resolve(other, IconStyle.LIGHT, edit)!!
         val base = other.getValue(IconStyle.DARK)
         assertThat(resolved.foreground).isEqualTo(base.foreground)
-        assertThat(Hct.fromInt(resolved.background).tone).isWithin(0.6).of(Hct.fromInt(base.background).tone - 4)
+        assertThat(tone(resolved.background)).isWithin(0.6).of(tone(base.background) - 4)
     }
 
     @Test
-    fun `inverting swaps plate and glyph after the tone offset`() {
-        val pair = pairs.getValue(IconStyle.DARK)
-        val shifted = IconEdits.withDarkToneOffset(pair, -5)
-        val inverted = IconEdits.resolve(pairs, IconStyle.LIGHT, IconEdit(IconStyle.DARK, -5, inverted = true))!!
-        assertThat(inverted.background).isEqualTo(shifted.foreground)
-        assertThat(inverted.foreground).isEqualTo(shifted.background)
-        assertThat(IconEdits.allowedOffsets(inverted)).isEqualTo(IconEdits.allowedOffsets(shifted))
+    fun `offsets apply to the colours as shown after inverting`() {
+        val edit = IconEdit(IconStyle.DARK, glyphToneOffset = -5, inverted = true)
+        val resolved = IconEdits.resolve(pairs, IconStyle.LIGHT, edit)!!
+        // Inverted Dark icon: the plate is the Dark glyph colour, the glyph the Dark plate colour.
+        assertThat(resolved.background).isEqualTo(dark.foreground)
+        assertThat(tone(resolved.foreground)).isWithin(0.6).of(tone(dark.background) - 5)
     }
 
     @Test

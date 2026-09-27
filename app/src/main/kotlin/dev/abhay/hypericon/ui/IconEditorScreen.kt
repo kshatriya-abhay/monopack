@@ -83,17 +83,22 @@ fun IconEditorScreen(
     onReset: () -> Unit,
     onClose: () -> Unit,
 ) {
-    val initial = edit ?: IconEdit(globalStyle, 0)
+    val initial = edit ?: IconEdit(globalStyle)
     var base by rememberSaveable(item.app.key) { mutableStateOf(initial.base) }
-    var requestedOffset by rememberSaveable(item.app.key) { mutableIntStateOf(initial.darkToneOffset) }
+    var requestedGlyph by rememberSaveable(item.app.key) { mutableIntStateOf(initial.glyphToneOffset) }
+    var requestedPlate by rememberSaveable(item.app.key) { mutableIntStateOf(initial.plateToneOffset) }
     var inverted by rememberSaveable(item.app.key) { mutableStateOf(initial.inverted) }
     var contrast by rememberSaveable(item.app.key) { mutableIntStateOf(initial.contrast) }
     var confirmDiscard by remember { mutableStateOf(false) }
 
     val basePair = pairs[base] ?: return
-    val allowed = remember(basePair) { IconEdits.allowedOffsets(basePair) }
-    val offset = requestedOffset.coerceIn(allowed.first, allowed.last)
-    val draft = IconEdit(base, offset, inverted, contrast)
+    // Each slider's range keeps the icon readable given the other slider's value.
+    val shown = IconEdits.shown(basePair, inverted)
+    val glyphAllowed = IconEdits.allowedOffsets(shown, IconEdits.Layer.GLYPH, requestedPlate, requestedGlyph)
+    val glyphOffset = requestedGlyph.coerceIn(glyphAllowed.first, glyphAllowed.last)
+    val plateAllowed = IconEdits.allowedOffsets(shown, IconEdits.Layer.PLATE, glyphOffset, requestedPlate)
+    val plateOffset = requestedPlate.coerceIn(plateAllowed.first, plateAllowed.last)
+    val draft = IconEdit(base, glyphOffset, plateOffset, inverted, contrast)
     val edited = IconEdits.apply(basePair, draft)
     val draftColors = edited.toIconColors()
     val changed = draft != initial
@@ -206,32 +211,9 @@ fun IconEditorScreen(
             EndLabels("Original", "Strongest")
             Spacer(Modifier.height(24.dp))
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                EditorLabel("Dark colour", Modifier.weight(1f))
-                Text(
-                    offsetLabel(offset),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            val span = allowed.last - allowed.first
-            Slider(
-                value = offset.toFloat(),
-                onValueChange = { requestedOffset = it.roundToInt() },
-                // Continuous track (no tick marks); the value is rounded to whole tone steps.
-                valueRange = allowed.first.toFloat()..allowed.last.toFloat().coerceAtLeast(allowed.first + 0.001f),
-                enabled = span > 0,
-                modifier = Modifier.semantics {
-                    contentDescription = "Dark colour brightness"
-                    stateDescription = offsetLabel(offset)
-                },
-            )
-            EndLabels("Darker", "Lighter")
-            Spacer(Modifier.height(12.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                ToneSwatch("Plate", edited.background)
-                ToneSwatch("Glyph", edited.foreground)
-            }
+            ToneSlider("Glyph colour", edited.foreground, glyphOffset, glyphAllowed) { requestedGlyph = it }
+            Spacer(Modifier.height(24.dp))
+            ToneSlider("Plate colour", edited.background, plateOffset, plateAllowed) { requestedPlate = it }
 
             if (edit != null) {
                 Spacer(Modifier.height(32.dp))
@@ -307,16 +289,36 @@ private fun LabelledIcon(glyph: ImageBitmap?, colors: IconColors, label: String,
     }
 }
 
+/** A tone-offset slider for one colour of the icon, with a swatch of the resulting colour. */
 @Composable
-private fun ToneSwatch(label: String, color: Int) {
+private fun ToneSlider(label: String, color: Int, offset: Int, allowed: IntRange, onChange: (Int) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
             Modifier
-                .size(24.dp)
+                .padding(bottom = 8.dp)
+                .size(20.dp)
                 .background(Color(color), CircleShape)
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape),
         )
-        Spacer(Modifier.width(8.dp))
-        Text("$label · tone ${IconEdits.displayTone(color)}", style = MaterialTheme.typography.bodySmall)
+        Spacer(Modifier.width(10.dp))
+        EditorLabel(label, Modifier.weight(1f))
+        Text(
+            "tone ${IconEdits.displayTone(color)} · ${offsetLabel(offset)}",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
     }
+    Slider(
+        value = offset.toFloat(),
+        onValueChange = { onChange(it.roundToInt()) },
+        // Continuous track (no tick marks); the value is rounded to whole tone steps.
+        valueRange = allowed.first.toFloat()..allowed.last.toFloat().coerceAtLeast(allowed.first + 0.001f),
+        enabled = allowed.last > allowed.first,
+        modifier = Modifier.semantics {
+            contentDescription = "$label brightness"
+            stateDescription = offsetLabel(offset)
+        },
+    )
+    EndLabels("Darker", "Lighter")
 }

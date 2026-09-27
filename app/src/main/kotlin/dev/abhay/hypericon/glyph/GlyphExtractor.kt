@@ -23,6 +23,11 @@ import kotlin.math.sqrt
  *   foreground onto black, turns the gray level into alpha, stretches the contrast and flips it if
  *   the edges (the background) would be opaque. No re-centring or re-scaling.
  *
+ * One deliberate deviation: legacy icons that already have the mask's shape fill the visible
+ * viewport exactly, where AOSP draws them at `1 - extraInset` (12.5% larger, cropping their rim).
+ * HyperOS's mask is a square, so every legacy icon with square bounds (circles too) takes that
+ * path, and the crop cut into logos such as MyJio, mParivahan and TrueCloud.
+ *
  * Ported from AOSP `frameworks/libs/systemui/iconloaderlib` (Apache License 2.0).
  */
 object GlyphExtractor {
@@ -32,6 +37,9 @@ object GlyphExtractor {
 
     /** `BaseIconFactory.LEGACY_ICON_SCALE`: 0.7 of the viewport, as a fraction of the layer. */
     private const val LEGACY_ICON_SCALE = 0.7f * (1f / (1 + 2 * EXTRA_INSET))
+
+    /** The visible viewport as a fraction of the layer: 72 / 108. */
+    private const val VIEWPORT = 1f / (1 + 2 * EXTRA_INSET)
 
     /** Legacy icons are wrapped on white (`BaseIconFactory.DEFAULT_WRAPPER_BACKGROUND`). */
     private const val WRAPPER_BACKGROUND = Color.WHITE
@@ -109,12 +117,13 @@ object GlyphExtractor {
 
     /**
      * `BaseIconFactory.wrapToAdaptiveIcon`: a white background with the legacy icon on top, either
-     * filling the mask (if the icon already has the mask's shape) or scaled to 70% of the viewport.
+     * filling the viewport (if the icon already has the mask's shape; see the class note) or scaled
+     * to 70% of the viewport.
      */
     private fun drawWrappedLegacy(canvas: Canvas, icon: Drawable, size: Int) {
         canvas.drawColor(WRAPPER_BACKGROUND)
         val (scale, isShape) = normalize(icon)
-        val fraction = if (isShape) 1 - EXTRA_INSET else scale * LEGACY_ICON_SCALE
+        val fraction = if (isShape) VIEWPORT else scale * LEGACY_ICON_SCALE
 
         // createScaledDrawable: keep the aspect ratio, centred in the layer.
         val w = icon.intrinsicWidth.toFloat()
