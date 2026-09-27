@@ -25,6 +25,9 @@ object ThemeApplier {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
 
+    /** Whether Theme Manager's apply entry point exists on this device. */
+    fun isAvailable(context: Context): Boolean = context.packageManager.resolveActivity(intent(""), 0) != null
+
     /** Returns false if Theme Manager (or that entry point) isn't available. */
     fun apply(context: Context, themePath: String): Boolean {
         val intent = intent(themePath)

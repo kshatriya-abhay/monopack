@@ -36,6 +36,13 @@ android {
         compose = true
     }
 
+    packaging {
+        resources {
+            // ARSCLib bundles a framework table per Android version; icon packs only use API 35's.
+            excludes += ((23..34) + 36).map { "frameworks/android/android-$it.apk" }
+        }
+    }
+
     testOptions {
         unitTests.isIncludeAndroidResources = true
     }
@@ -49,6 +56,8 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.material.color.utilities)
     implementation(libs.androidx.datastore.preferences)
+    implementation(libs.arsclib)
+    implementation(libs.apksig)
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)

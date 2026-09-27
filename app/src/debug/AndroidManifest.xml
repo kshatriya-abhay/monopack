@@ -7,5 +7,10 @@
             android:name=".debug.IconDumpReceiver"
             android:exported="true"
             android:permission="android.permission.DUMP" />
+        <!-- Debug builds only: builds and signs a test icon pack (Keystore + apksig check). -->
+        <receiver
+            android:name=".debug.PackSpikeReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP" />
     </application>
 </manifest>

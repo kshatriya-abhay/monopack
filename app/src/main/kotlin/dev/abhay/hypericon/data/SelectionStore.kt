@@ -35,6 +35,9 @@ data class SavedSelections(
 /** The theme file "Reapply" uses: the last one applied, or the last one exported. */
 data class LastTheme(val title: String, val style: IconStyle, val absolutePath: String)
 
+/** An exported icon pack, remembered for the same-name warning. */
+data class PackRecord(val name: String, val packageName: String, val exportedAt: Long)
+
 interface SelectionStore {
     suspend fun load(): SavedSelections?
 
@@ -48,6 +51,16 @@ interface SelectionStore {
     suspend fun loadLastTheme(): LastTheme?
 
     suspend fun saveLastTheme(theme: LastTheme)
+
+    /** Exported packs by normalised name (`PackNaming.normalize`). */
+    suspend fun loadPackHistory(): Map<String, PackRecord>
+
+    suspend fun savePackRecord(normalizedName: String, record: PackRecord)
+
+    /** The export target chosen last time (an `ExportTarget` name), or null. */
+    suspend fun loadExportTarget(): String?
+
+    suspend fun saveExportTarget(target: String)
 }
 
 private val Context.selectionDataStore: DataStore<Preferences> by preferencesDataStore(name = "selection")
@@ -70,6 +83,22 @@ class DataStoreSelectionStore(context: Context) : SelectionStore {
 
     override suspend fun saveEdits(edits: Map<String, IconEdit>) {
         store.edit { it[stringPreferencesKey(EDITS)] = EditsJson.encode(edits) }
+    }
+
+    override suspend fun loadPackHistory(): Map<String, PackRecord> =
+        store.data.first()[stringPreferencesKey(PACKS)]?.let(PackHistoryJson::decode).orEmpty()
+
+    override suspend fun savePackRecord(normalizedName: String, record: PackRecord) {
+        store.edit {
+            val history = it[stringPreferencesKey(PACKS)]?.let(PackHistoryJson::decode).orEmpty()
+            it[stringPreferencesKey(PACKS)] = PackHistoryJson.encode(history + (normalizedName to record))
+        }
+    }
+
+    override suspend fun loadExportTarget(): String? = store.data.first()[stringPreferencesKey(EXPORT_TARGET)]
+
+    override suspend fun saveExportTarget(target: String) {
+        store.edit { it[stringPreferencesKey(EXPORT_TARGET)] = target }
     }
 
     override suspend fun loadLastTheme(): LastTheme? {
@@ -146,6 +175,8 @@ class DataStoreSelectionStore(context: Context) : SelectionStore {
         const val OPPOSITE = "committed.opposite"
         const val EDITS = "edits"
         const val LAST_THEME = "last_theme"
+        const val PACKS = "icon_packs"
+        const val EXPORT_TARGET = "export_target"
     }
 }
 
@@ -190,6 +221,26 @@ internal object EditsJson {
                         contrast = entry.optInt("contrast", 0),
                     ),
                 )
+            }
+        }
+    }
+}
+
+/** Pack history as JSON: `{"<normalised name>": {"name": "…", "package": "…", "at": 1790500000000}}`. */
+internal object PackHistoryJson {
+    fun encode(history: Map<String, PackRecord>): String = JSONObject().apply {
+        history.forEach { (key, record) ->
+            put(key, JSONObject().put("name", record.name).put("package", record.packageName).put("at", record.exportedAt))
+        }
+    }.toString()
+
+    fun decode(json: String): Map<String, PackRecord> {
+        val root = runCatching { JSONObject(json) }.getOrNull() ?: return emptyMap()
+        return buildMap {
+            for (key in root.keys()) {
+                val entry = root.optJSONObject(key) ?: continue
+                val pkg = entry.optString("package").takeIf { it.isNotEmpty() } ?: continue
+                put(key, PackRecord(entry.optString("name", key), pkg, entry.optLong("at", 0L)))
             }
         }
     }

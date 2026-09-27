@@ -29,3 +29,12 @@ run = "./gradlew installDebug"
 description = "Install and launch on the connected device"
 depends = ["install"]
 run = "adb shell am start -n dev.abhay.hypericon/.MainActivity"
+
+[tasks.check-pack]
+description = "Inspect and verify an icon pack APK: mise run check-pack <file.apk>"
+run = '''
+BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
+"$BT/aapt2" dump badging "{{arg(name='apk')}}" | head -8
+"$BT/aapt2" dump permissions "{{arg(name='apk')}}"
+"$BT/apksigner" verify -v --print-certs "{{arg(name='apk')}}" | grep -E "Verifies|scheme \(|DN"
+'''

@@ -25,7 +25,7 @@ class DownloadsSaver(private val context: Context) : ExportSaver {
         val resolver = context.contentResolver
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, file.name)
-            put(MediaStore.Downloads.MIME_TYPE, MIME_TYPE)
+            put(MediaStore.Downloads.MIME_TYPE, mimeTypeFor(file.name))
             put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/$FOLDER")
             put(MediaStore.Downloads.IS_PENDING, 1)
         }
@@ -55,14 +55,17 @@ class DownloadsSaver(private val context: Context) : ExportSaver {
     companion object {
         const val FOLDER = "HyperIcon"
         const val MIME_TYPE = "application/octet-stream"
+        const val APK_MIME_TYPE = "application/vnd.android.package-archive"
 
-        fun shareIntent(uri: String): Intent = Intent.createChooser(
+        fun mimeTypeFor(fileName: String): String = if (fileName.endsWith(".apk")) APK_MIME_TYPE else MIME_TYPE
+
+        fun shareIntent(uri: String, fileName: String = ""): Intent = Intent.createChooser(
             Intent(Intent.ACTION_SEND).apply {
-                type = MIME_TYPE
+                type = mimeTypeFor(fileName)
                 putExtra(Intent.EXTRA_STREAM, uri.toUri())
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             },
-            "Share theme",
+            if (fileName.endsWith(".apk")) "Share icon pack" else "Share theme",
         )
     }
 }

@@ -12,12 +12,23 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.abhay.hypericon.appContainer
 import dev.abhay.hypericon.apps.AppSource
 import dev.abhay.hypericon.data.LastTheme
+import dev.abhay.hypericon.data.PackRecord
 import dev.abhay.hypericon.data.SavedSelections
 import dev.abhay.hypericon.data.SelectionStore
 import dev.abhay.hypericon.export.ExportApp
+import dev.abhay.hypericon.export.ExportJob
+import dev.abhay.hypericon.export.ExportKind
 import dev.abhay.hypericon.export.ExportRequest
+import dev.abhay.hypericon.export.ExportRunner
 import dev.abhay.hypericon.export.ExportSaver
-import dev.abhay.hypericon.export.ThemeExporter
+import dev.abhay.hypericon.export.ExportState
+import dev.abhay.hypericon.export.ExportedFile
+import dev.abhay.hypericon.export.InstalledPack
+import dev.abhay.hypericon.export.PackApp
+import dev.abhay.hypericon.export.PackInstalls
+import dev.abhay.hypericon.export.PackRequest
+import dev.abhay.hypericon.export.ThemeApplier
+import dev.abhay.hypericon.iconpack.PackNaming
 import dev.abhay.hypericon.model.Accent
 import dev.abhay.hypericon.model.ColorSource
 import dev.abhay.hypericon.model.GlyphSource
@@ -33,6 +44,7 @@ import dev.abhay.hypericon.palette.PaletteSource
 import dev.abhay.hypericon.palette.Seed
 import java.io.File
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import kotlin.math.ceil
 import kotlin.math.roundToInt
@@ -51,37 +63,27 @@ import kotlinx.coroutines.withContext
 
 fun IconStyle.opposite(): IconStyle = if (this == IconStyle.LIGHT) IconStyle.DARK else IconStyle.LIGHT
 
+/** What an export produces: a HyperOS theme (`.mtz`) or an icon pack APK for other launchers. */
+enum class ExportTarget { HYPEROS, ICON_PACK }
+
 /** What the user chose in the export sheet. */
 data class ExportOptions(
-    /** Theme name without the style suffix, e.g. "HyperIcon · Primary". */
+    /** Theme or pack name without a style suffix, e.g. "HyperIcon · Primary". */
     val name: String,
+    /** HyperOS theme styles (one file each); ignored for an icon pack, which has both. */
     val styles: Set<IconStyle>,
     /** Include apps whose glyph was generated (off: only apps with their own monochrome icon). */
     val includeGenerated: Boolean = true,
+    val target: ExportTarget = ExportTarget.HYPEROS,
 )
 
-/** One exported theme file. */
-data class ExportedFile(
-    val style: IconStyle,
-    /** Theme title, e.g. "HyperIcon · Primary · Light". */
-    val title: String,
-    val fileName: String,
-    /** Human-readable location, e.g. "Download/HyperIcon/…mtz". */
-    val location: String,
-    val uri: String,
-    /** Filesystem path of the Downloads copy (what Theme Manager is given). */
-    val absolutePath: String,
-    /** The copy in the app's cache (source for "Save as…"). */
-    val cachePath: String,
-    val iconCount: Int,
-)
+/** What the export sheet should warn about for an icon-pack name. */
+sealed interface PackNameWarning {
+    /** A pack with this name was exported before (on [exportedAt]) or is installed: this one replaces it. */
+    data class Replaces(val exportedAt: Long?) : PackNameWarning
 
-/** Progress of a theme export. */
-sealed interface ExportState {
-    data object Idle : ExportState
-    data class Running(val done: Int, val total: Int, val file: Int = 1, val files: Int = 1) : ExportState
-    data class Done(val files: List<ExportedFile>) : ExportState
-    data class Failed(val message: String) : ExportState
+    /** A pack with this name is installed but signed with another key: Android won't replace it. */
+    data object Conflicts : PackNameWarning
 }
 
 /** Which apps the grid shows. */
@@ -118,6 +120,10 @@ data class UiState(
     /** Apps selected with long-press; non-empty means selection mode. */
     val selected: Set<String> = emptySet(),
     val export: ExportState = ExportState.Idle,
+    /** The progress dialog was hidden; the export continues with its notification. */
+    val exportDialogHidden: Boolean = false,
+    /** Exported icon packs by normalised name (for the same-name warning). */
+    val packHistory: Map<String, PackRecord> = emptyMap(),
     /** The theme file Reapply uses, and whether it still exists. */
     val lastTheme: LastTheme? = null,
     val lastThemeAvailable: Boolean = false,
@@ -181,8 +187,11 @@ class MainViewModel(
     private val loader: ItemLoader,
     private val palettes: PaletteSource,
     private val store: SelectionStore,
-    private val exporter: ThemeExporter,
+    private val runner: ExportRunner,
     private val saver: ExportSaver,
+    private val packInstalls: PackInstalls,
+    /** HyperOS Theme Manager is installed (the default export target then). */
+    private val hasThemeManager: Boolean,
     systemStyle: IconStyle,
     private val iconPx: Int,
     private val detailPx: Int,
@@ -219,6 +228,23 @@ class MainViewModel(
         viewModelScope.launch { restore() }
         viewModelScope.launch { restoreEdits() }
         viewModelScope.launch { restoreLastTheme() }
+        viewModelScope.launch { restoreExportPrefs() }
+        viewModelScope.launch {
+            runner.state.collect { export ->
+                _state.update { s ->
+                    val theme = (export as? ExportState.Done)?.lastTheme
+                    s.copy(
+                        export = export,
+                        exportDialogHidden = s.exportDialogHidden && export is ExportState.Running,
+                        lastTheme = theme ?: s.lastTheme,
+                        lastThemeAvailable = theme?.let { fileExists(it.absolutePath) } ?: s.lastThemeAvailable,
+                    )
+                }
+                if (export is ExportState.Done && export.files.any { it.kind == ExportKind.ICON_PACK }) {
+                    runCatching { store.loadPackHistory() }.getOrNull()?.let { h -> _state.update { it.copy(packHistory = h) } }
+                }
+            }
+        }
         refresh()
     }
 
@@ -307,69 +333,93 @@ class MainViewModel(
 
     fun dismissDefaultPaletteBanner() = _state.update { it.copy(defaultPaletteBannerDismissed = true) }
 
-    private var exportJob: Job? = null
+    private var lastTarget: ExportTarget? = null
 
     /** Default export options for the export sheet, from the previewed selection. */
     fun defaultExportOptions(): ExportOptions? {
         val committed = _state.value.committed ?: return null
-        return ExportOptions(name = exportName(committed), styles = setOf(committed.style))
+        val target = lastTarget ?: if (hasThemeManager) ExportTarget.HYPEROS else ExportTarget.ICON_PACK
+        return ExportOptions(name = exportName(committed), styles = setOf(committed.style), target = target)
+    }
+
+    /** Whether exporting an icon pack named [name] would replace or clash with an earlier one. */
+    fun packNameWarning(name: String): PackNameWarning? {
+        val normalized = PackNaming.normalize(name.trim().ifEmpty { "HyperIcon" })
+        val record = _state.value.packHistory[normalized]
+        return when (runCatching { packInstalls.status(PackNaming.packageFor(normalized)) }.getOrDefault(InstalledPack.NOT_INSTALLED)) {
+            InstalledPack.OTHER_SIGNER -> PackNameWarning.Conflicts
+            InstalledPack.SAME_SIGNER -> PackNameWarning.Replaces(record?.exportedAt)
+            InstalledPack.NOT_INSTALLED -> record?.let { PackNameWarning.Replaces(it.exportedAt) }
+        }
     }
 
     /**
-     * Exports the previewed icons as one `.mtz` per chosen icon style (every launcher entry,
-     * icon edits applied) and saves them to Downloads.
+     * Exports the previewed icons in the background ([ExportRunner]): one `.mtz` per chosen style,
+     * or one icon pack, every launcher entry with its icon edit applied, saved to Downloads.
      */
     fun export(options: ExportOptions, now: LocalDateTime = LocalDateTime.now()) {
         val s = _state.value
-        if (!s.exportEnabled || options.styles.isEmpty()) return
+        if (!s.exportEnabled) return
         val committed = s.committed ?: return
         if (s.committedPalette == null) return
+        lastTarget = options.target
+        viewModelScope.launch { runCatching { store.saveExportTarget(options.target.name) } }
         val pairs = s.committedPairs
         val entries = s.items.filter {
             it.glyph != null && it.glyph.source != GlyphSource.FAILED &&
                 (options.includeGenerated || it.glyph.source == GlyphSource.NATIVE_MONO)
         }
-        val styles = IconStyle.entries.filter { it in options.styles }
-        val requests = styles.map { style ->
-            val title = titleFor(options.name, style)
-            style to ExportRequest(
-                title = title,
-                description = "Monochrome icons generated on-device by HyperIcon (${entries.size} apps).",
-                fileName = fileNameFor(title, now),
-                apps = entries.map {
-                    ExportApp(
-                        app = it.app,
-                        palette = IconEdits.resolve(pairs, style, s.edits[it.app.key]) ?: pairs.getValue(style),
-                        contrast = s.edits[it.app.key]?.contrast ?: 0,
-                        folders = MtzNaming.folders(it.app.packageName, it.app.component.className, it.app.isMainActivity),
+        val name = options.name.trim().ifEmpty { "HyperIcon" }
+        val job = when (options.target) {
+            ExportTarget.HYPEROS -> {
+                if (options.styles.isEmpty()) return
+                val requests = IconStyle.entries.filter { it in options.styles }.map { style ->
+                    val title = titleFor(name, style)
+                    style to ExportRequest(
+                        title = title,
+                        description = "Monochrome icons generated on-device by HyperIcon (${entries.size} apps).",
+                        fileName = fileNameFor(title, now),
+                        apps = entries.map {
+                            ExportApp(
+                                app = it.app,
+                                palette = IconEdits.resolve(pairs, style, s.edits[it.app.key]) ?: pairs.getValue(style),
+                                contrast = s.edits[it.app.key]?.contrast ?: 0,
+                                folders = MtzNaming.folders(it.app.packageName, it.app.component.className, it.app.isMainActivity),
+                            )
+                        },
+                        darkPreview = style == IconStyle.DARK,
                     )
-                },
-                darkPreview = style == IconStyle.DARK,
-            )
-        }
-        _state.update { it.copy(export = ExportState.Running(0, entries.size, 1, requests.size)) }
-        exportJob = viewModelScope.launch {
-            try {
-                exporter.clearCache()
-                val files = requests.mapIndexed { index, (style, request) ->
-                    val file = exporter.export(request) { done, total ->
-                        _state.update { it.copy(export = ExportState.Running(done, total, index + 1, requests.size)) }
-                    }
-                    val saved = saver.save(file)
-                    ExportedFile(style, request.title, file.name, saved.displayPath, saved.uri, saved.absolutePath, file.path, request.apps.size)
                 }
-                _state.update { it.copy(export = ExportState.Done(files)) }
-                // Until one is applied, Reapply uses the new export (the previewed style's file for Both).
-                val newest = files.firstOrNull { it.style == committed.style } ?: files.first()
-                setLastTheme(LastTheme(newest.title, newest.style, newest.absolutePath))
-            } catch (e: CancellationException) {
-                _state.update { it.copy(export = ExportState.Idle) }
-                throw e
-            } catch (e: Exception) {
-                Log.w(TAG, "Export failed", e)
-                _state.update { it.copy(export = ExportState.Failed(e.message ?: e.javaClass.simpleName)) }
+                ExportJob.Themes(requests, preferredStyle = committed.style)
+            }
+            ExportTarget.ICON_PACK -> {
+                // One style for every icon, in light and dark mode (like a HyperOS theme); edited
+                // apps keep their own absolute base.
+                val style = options.styles.singleOrNull() ?: committed.style
+                // The sheet suggests "<name> · Light/Dark"; the user may change it, so use it as typed.
+                val title = name
+                ExportJob.Pack(
+                    PackRequest(
+                        name = title,
+                        fileName = fileNameFor("$title · pack", now, extension = "apk"),
+                        versionCode = (now.atZone(ZoneId.systemDefault()).toEpochSecond() / 60).toInt(),
+                        versionName = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")),
+                        apps = entries.map {
+                            val edit = s.edits[it.app.key]
+                            PackApp(
+                                it.app,
+                                day = IconEdits.resolve(pairs, style, edit) ?: pairs.getValue(style),
+                                night = null,
+                                contrast = edit?.contrast ?: 0,
+                                inverted = edit?.inverted ?: false,
+                            )
+                        },
+                        iconPalette = pairs.getValue(style),
+                    ),
+                )
             }
         }
+        runner.start(job)
     }
 
     /** Copies an exported file to a document the user picked ("Save as…"). */
@@ -382,21 +432,29 @@ class MainViewModel(
         }
     }
 
-    fun cancelExport() {
-        exportJob?.cancel()
-        _state.update { it.copy(export = ExportState.Idle) }
-    }
+    fun cancelExport() = runner.cancel()
 
-    fun dismissExport() = _state.update { it.copy(export = ExportState.Idle) }
+    /** Hides the progress dialog; the export continues in the background with its notification. */
+    fun hideExportDialog() = _state.update { it.copy(exportDialogHidden = true) }
+
+    fun dismissExport() = runner.dismiss()
 
     /** Apply icons was tapped for [file]: it becomes the theme Reapply uses. */
-    fun onThemeApplied(file: ExportedFile) = setLastTheme(LastTheme(file.title, file.style, file.absolutePath))
+    fun onThemeApplied(file: ExportedFile) {
+        if (file.kind == ExportKind.THEME && file.style != null) setLastTheme(LastTheme(file.title, file.style, file.absolutePath))
+    }
 
     private fun setLastTheme(theme: LastTheme) {
         _state.update { it.copy(lastTheme = theme, lastThemeAvailable = fileExists(theme.absolutePath)) }
         viewModelScope.launch {
             runCatching { store.saveLastTheme(theme) }.onFailure { Log.w(TAG, "Saving the last theme failed", it) }
         }
+    }
+
+    private suspend fun restoreExportPrefs() {
+        lastTarget = runCatching { store.loadExportTarget() }.getOrNull()?.let { name -> ExportTarget.entries.firstOrNull { it.name == name } }
+        val history = runCatching { store.loadPackHistory() }.getOrNull().orEmpty()
+        _state.update { it.copy(packHistory = history) }
     }
 
     private suspend fun restoreLastTheme() {
@@ -531,10 +589,10 @@ class MainViewModel(
         private fun titleFor(name: String, style: IconStyle) = "${name.trim().ifEmpty { "HyperIcon" }} · ${style.displayName}"
 
         /** "HyperIcon-Blue-Primary-Dark-20260927-1015.mtz" (letters and digits of each part). */
-        fun fileNameFor(title: String, now: LocalDateTime): String {
+        fun fileNameFor(title: String, now: LocalDateTime, extension: String = "mtz"): String {
             val parts = title.split("·").map { part -> part.filter { it.isLetterOrDigit() } }.filter { it.isNotEmpty() }
             val stamp = now.format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmm"))
-            return (parts.ifEmpty { listOf("HyperIcon") } + stamp).joinToString("-") + ".mtz"
+            return (parts.ifEmpty { listOf("HyperIcon") } + stamp).joinToString("-") + ".$extension"
         }
 
         private val IconStyle.displayName get() = if (this == IconStyle.DARK) "Dark" else "Light"
@@ -561,8 +619,10 @@ class MainViewModel(
                     loader = container.itemLoader,
                     palettes = container.paletteProvider,
                     store = container.selectionStore,
-                    exporter = container.exporter,
+                    runner = container.exportRunner,
                     saver = container.exportSaver,
+                    packInstalls = container.packInstalls,
+                    hasThemeManager = ThemeApplier.isAvailable(app),
                     systemStyle = if (night == Configuration.UI_MODE_NIGHT_YES) IconStyle.DARK else IconStyle.LIGHT,
                     iconPx = (GRID_ICON_DP * density).roundToInt(),
                     detailPx = (DETAIL_ICON_DP * density).roundToInt(),

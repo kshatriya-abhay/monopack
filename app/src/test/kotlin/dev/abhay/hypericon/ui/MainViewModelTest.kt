@@ -7,10 +7,17 @@ import androidx.core.graphics.createBitmap
 import com.google.common.truth.Truth.assertThat
 import dev.abhay.hypericon.apps.AppSource
 import dev.abhay.hypericon.data.LastTheme
+import dev.abhay.hypericon.data.PackRecord
 import dev.abhay.hypericon.data.SavedSelections
 import dev.abhay.hypericon.data.SelectionStore
+import dev.abhay.hypericon.export.ExportKind
 import dev.abhay.hypericon.export.ExportRequest
+import dev.abhay.hypericon.export.ExportRunner
 import dev.abhay.hypericon.export.ExportSaver
+import dev.abhay.hypericon.export.ExportState
+import dev.abhay.hypericon.export.InstalledPack
+import dev.abhay.hypericon.export.PackExporter
+import dev.abhay.hypericon.export.PackRequest
 import dev.abhay.hypericon.export.SavedExport
 import dev.abhay.hypericon.export.ThemeExporter
 import dev.abhay.hypericon.model.Accent
@@ -27,6 +34,7 @@ import dev.abhay.hypericon.palette.PaletteSource
 import dev.abhay.hypericon.palette.SeedPresets
 import java.io.File
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -110,7 +118,36 @@ class MainViewModelTest {
         override suspend fun saveLastTheme(theme: LastTheme) {
             lastTheme = theme
         }
+
+        var packs: Map<String, PackRecord> = emptyMap()
+
+        override suspend fun loadPackHistory() = packs
+
+        override suspend fun savePackRecord(normalizedName: String, record: PackRecord) {
+            packs = packs + (normalizedName to record)
+        }
+
+        var target: String? = null
+
+        override suspend fun loadExportTarget() = target
+
+        override suspend fun saveExportTarget(target: String) {
+            this.target = target
+        }
     }
+
+    private class FakePackExporter : PackExporter {
+        var request: PackRequest? = null
+        override suspend fun export(request: PackRequest, onProgress: (Int, Int) -> Unit, onSigning: () -> Unit): File {
+            this.request = request
+            request.apps.indices.forEach { onProgress(it + 1, request.apps.size) }
+            onSigning()
+            return File(request.fileName)
+        }
+    }
+
+    private val packExporter = FakePackExporter()
+    private var installed = InstalledPack.NOT_INSTALLED
 
     private class FakeExporter : ThemeExporter {
         val requests = mutableListOf<ExportRequest>()
@@ -135,13 +172,15 @@ class MainViewModelTest {
 
     private val existingFiles = mutableSetOf<String>()
 
-    private fun TestScope.viewModel(store: SelectionStore = FakeStore()) = MainViewModel(
+    private fun TestScope.viewModel(store: SelectionStore = FakeStore(), hasThemeManager: Boolean = true) = MainViewModel(
         apps = fakeApps,
         loader = fakeLoader,
         palettes = fakePalettes,
         store = store,
-        exporter = exporter,
+        runner = ExportRunner(CoroutineScope(dispatcher), exporter, packExporter, saver, store) {},
         saver = saver,
+        packInstalls = { installed },
+        hasThemeManager = hasThemeManager,
         systemStyle = IconStyle.DARK,
         iconPx = 160,
         detailPx = 264,
@@ -479,6 +518,7 @@ class MainViewModelTest {
         assertThat(file.absolutePath).isEqualTo("/sdcard/Download/HyperIcon/HyperIcon-Primary-Dark-20260927-1015.mtz")
         assertThat(file.iconCount).isEqualTo(3)
         vm.dismissExport()
+        advanceUntilIdle()
         assertThat(vm.state.value.export).isEqualTo(ExportState.Idle)
     }
 
@@ -538,5 +578,94 @@ class MainViewModelTest {
         assertThat(vm.state.value.defaultPaletteBannerDismissed).isFalse()
         vm.dismissDefaultPaletteBanner()
         assertThat(vm.state.value.defaultPaletteBannerDismissed).isTrue()
+    }
+
+    @Test
+    fun `an icon pack uses one style for every icon, and edited apps their own base`() = runTest(dispatcher) {
+        val store = FakeStore()
+        val vm = viewModel(store)
+        advanceUntilIdle()
+        vm.preview()
+        val beta = vm.state.value.items[1]
+        vm.saveEdit(beta.app.key, IconEdit(IconStyle.LIGHT, plateToneOffset = -3, inverted = true, contrast = 40))
+        vm.export(ExportOptions("My pack · Dark", setOf(IconStyle.DARK), target = ExportTarget.ICON_PACK), java.time.LocalDateTime.of(2026, 9, 27, 10, 15))
+        advanceUntilIdle()
+
+        val request = packExporter.request!!
+        assertThat(request.name).isEqualTo("My pack · Dark")
+        assertThat(request.fileName).isEqualTo("Mypack-Dark-pack-20260927-1015.apk")
+        val dark = wallpaper[Accent.PRIMARY]!![IconStyle.DARK]!!
+        val (alpha, edited, gamma) = request.apps
+        assertThat(alpha.day).isEqualTo(dark)
+        assertThat(gamma.day).isEqualTo(dark)
+        assertThat(request.apps.all { it.night == null }).isTrue()
+        assertThat(edited.day).isEqualTo(vm.state.value.paletteFor(beta.app.key))
+        assertThat(edited.inverted).isTrue()
+        assertThat(edited.contrast).isEqualTo(40)
+        assertThat(request.iconPalette).isEqualTo(dark)
+
+        val done = vm.state.value.export as ExportState.Done
+        assertThat(done.files.single().kind).isEqualTo(ExportKind.ICON_PACK)
+        assertThat(done.lastTheme).isNull()
+        assertThat(store.packs.keys).containsExactly("my pack · dark")
+        assertThat(store.target).isEqualTo("ICON_PACK")
+    }
+
+    @Test
+    fun `re-using a pack name warns, and a pack signed by another key conflicts`() = runTest(dispatcher) {
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.preview()
+        assertThat(vm.packNameWarning("My pack · Light")).isNull()
+        vm.export(ExportOptions("My pack · Light", setOf(IconStyle.LIGHT), target = ExportTarget.ICON_PACK))
+        advanceUntilIdle()
+        assertThat(vm.packNameWarning("  my PACK  · light ")).isInstanceOf(PackNameWarning.Replaces::class.java)
+        // The other style's suggested name is a separate pack.
+        assertThat(vm.packNameWarning("My pack · Dark")).isNull()
+        installed = InstalledPack.OTHER_SIGNER
+        assertThat(vm.packNameWarning("Another")).isEqualTo(PackNameWarning.Conflicts)
+    }
+
+    @Test
+    fun `the export target defaults to the HyperOS theme only with Theme Manager, then to the last choice`() = runTest(dispatcher) {
+        val noThemeManager = viewModel(hasThemeManager = false)
+        advanceUntilIdle()
+        noThemeManager.preview()
+        assertThat(noThemeManager.defaultExportOptions()!!.target).isEqualTo(ExportTarget.ICON_PACK)
+
+        val store = FakeStore().apply { target = "ICON_PACK" }
+        val remembered = viewModel(store)
+        advanceUntilIdle()
+        remembered.preview()
+        assertThat(remembered.defaultExportOptions()!!.target).isEqualTo(ExportTarget.ICON_PACK)
+    }
+
+    @Test
+    fun `hiding the progress dialog lasts until the export ends`() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val slow = object : PackExporter {
+            override suspend fun export(request: PackRequest, onProgress: (Int, Int) -> Unit, onSigning: () -> Unit): File {
+                gate.await()
+                return File(request.fileName)
+            }
+        }
+        val store = FakeStore()
+        val vm = MainViewModel(
+            apps = fakeApps, loader = fakeLoader, palettes = fakePalettes, store = store,
+            runner = ExportRunner(CoroutineScope(dispatcher), exporter, slow, saver, store) {},
+            saver = saver, packInstalls = { installed }, hasThemeManager = true, systemStyle = IconStyle.DARK,
+            iconPx = 160, detailPx = 264, loadDispatcher = dispatcher, workDispatcher = dispatcher,
+        )
+        advanceUntilIdle()
+        vm.preview()
+        vm.export(ExportOptions("x", emptySet(), target = ExportTarget.ICON_PACK))
+        advanceUntilIdle()
+        assertThat(vm.state.value.export).isInstanceOf(ExportState.Running::class.java)
+        vm.hideExportDialog()
+        assertThat(vm.state.value.exportDialogHidden).isTrue()
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertThat(vm.state.value.export).isInstanceOf(ExportState.Done::class.java)
+        assertThat(vm.state.value.exportDialogHidden).isFalse()
     }
 }

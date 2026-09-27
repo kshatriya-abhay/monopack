@@ -1,7 +1,11 @@
 package dev.abhay.hypericon.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -36,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -189,14 +194,22 @@ fun MainScreen(viewModel: MainViewModel = viewModel(factory = MainViewModel.Fact
         }
     }
 
+    // Exports run in the background with a progress notification; ask once to show it (optional).
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    val hasThemeManager = remember { ThemeApplier.isAvailable(context) }
     exportOptions?.let { defaults ->
         ExportOptionsSheet(
             defaults = defaults,
             onExport = {
                 exportOptions = null
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                    notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
                 viewModel.export(it)
             },
             onDismiss = { exportOptions = null },
+            hasThemeManager = hasThemeManager,
+            packNameWarning = viewModel::packNameWarning,
         )
     }
     ExportDialogs(
@@ -205,6 +218,8 @@ fun MainScreen(viewModel: MainViewModel = viewModel(factory = MainViewModel.Fact
         onDismiss = viewModel::dismissExport,
         onSaveCopy = viewModel::saveCopy,
         onApplied = viewModel::onThemeApplied,
+        onHide = viewModel::hideExportDialog,
+        dialogHidden = state.exportDialogHidden,
     )
 
     detailsItem?.let { item ->
