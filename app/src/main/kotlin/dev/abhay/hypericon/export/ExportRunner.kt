@@ -5,6 +5,9 @@ import dev.abhay.hypericon.data.LastTheme
 import dev.abhay.hypericon.data.PackRecord
 import dev.abhay.hypericon.data.SelectionStore
 import dev.abhay.hypericon.iconpack.PackNaming
+import dev.abhay.hypericon.library.ExportRecord
+import dev.abhay.hypericon.library.LibraryStore
+import dev.abhay.hypericon.model.IconPalette
 import dev.abhay.hypericon.model.IconStyle
 import java.io.File
 import kotlinx.coroutines.CancellationException
@@ -64,8 +67,15 @@ sealed interface ExportState {
 sealed interface ExportJob {
     val kind: ExportKind
 
-    /** One `.mtz` per style; [preferredStyle]'s file becomes the Reapply target. */
-    data class Themes(val requests: List<Pair<IconStyle, ExportRequest>>, val preferredStyle: IconStyle) : ExportJob {
+    /**
+     * One `.mtz` per style; [preferredStyle]'s file becomes the Reapply target. [pairs] are the
+     * committed colours per style (for the library thumbnail).
+     */
+    data class Themes(
+        val requests: List<Pair<IconStyle, ExportRequest>>,
+        val preferredStyle: IconStyle,
+        val pairs: Map<IconStyle, IconPalette> = emptyMap(),
+    ) : ExportJob {
         override val kind get() = ExportKind.THEME
     }
 
@@ -89,6 +99,7 @@ class ExportRunner(
     private val packExporter: PackExporter,
     private val saver: ExportSaver,
     private val store: SelectionStore,
+    private val library: LibraryStore,
     private val background: BackgroundWork,
 ) {
     private val _state = MutableStateFlow<ExportState>(ExportState.Idle)
@@ -138,7 +149,9 @@ class ExportRunner(
                 _state.value = ExportState.Running(work.kind, done, total, index + 1, work.requests.size)
             }
             val saved = saver.save(file)
-            ExportedFile(ExportKind.THEME, style, request.title, file.name, saved.displayPath, saved.uri, saved.absolutePath, file.path, request.apps.size)
+            val pair = work.pairs[style]
+            record(ExportRecord(saved.name, ExportKind.THEME, request.title, style, System.currentTimeMillis(), request.apps.size, pair?.background, pair?.foreground))
+            ExportedFile(ExportKind.THEME, style, request.title, saved.name, saved.displayPath, saved.uri, saved.absolutePath, file.path, request.apps.size)
         }
         // Until one is applied, Reapply uses the new export (the preferred style's file for Both).
         val newest = files.firstOrNull { it.style == work.preferredStyle } ?: files.first()
@@ -158,8 +171,18 @@ class ExportRunner(
         val record = PackRecord(request.name, request.packageName, System.currentTimeMillis())
         runCatching { store.savePackRecord(PackNaming.normalize(request.name), record) }
             .onFailure { Log.w(TAG, "Saving the pack history failed", it) }
-        val exported = ExportedFile(ExportKind.ICON_PACK, null, request.name, file.name, saved.displayPath, saved.uri, saved.absolutePath, file.path, request.apps.size)
+        record(
+            ExportRecord(
+                saved.name, ExportKind.ICON_PACK, request.name, request.style, System.currentTimeMillis(), request.apps.size,
+                request.iconPalette.background, request.iconPalette.foreground, request.packageName, request.versionCode,
+            ),
+        )
+        val exported = ExportedFile(ExportKind.ICON_PACK, request.style, request.name, saved.name, saved.displayPath, saved.uri, saved.absolutePath, file.path, request.apps.size)
         return ExportState.Done(listOf(exported))
+    }
+
+    private suspend fun record(record: ExportRecord) {
+        runCatching { library.saveRecord(record) }.onFailure { Log.w(TAG, "Saving the library record failed", it) }
     }
 
     private companion object {

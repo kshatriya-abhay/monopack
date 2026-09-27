@@ -11,6 +11,7 @@ import dev.abhay.hypericon.data.PackRecord
 import dev.abhay.hypericon.data.SavedSelections
 import dev.abhay.hypericon.data.SelectionStore
 import dev.abhay.hypericon.export.ExportKind
+import dev.abhay.hypericon.library.FakeLibraryStore
 import dev.abhay.hypericon.export.ExportRequest
 import dev.abhay.hypericon.export.ExportRunner
 import dev.abhay.hypericon.export.ExportSaver
@@ -147,6 +148,7 @@ class MainViewModelTest {
     }
 
     private val packExporter = FakePackExporter()
+    private val library = FakeLibraryStore()
     private var installed = InstalledPack.NOT_INSTALLED
 
     private class FakeExporter : ThemeExporter {
@@ -177,7 +179,7 @@ class MainViewModelTest {
         loader = fakeLoader,
         palettes = fakePalettes,
         store = store,
-        runner = ExportRunner(CoroutineScope(dispatcher), exporter, packExporter, saver, store) {},
+        runner = ExportRunner(CoroutineScope(dispatcher), exporter, packExporter, saver, store, library) {},
         saver = saver,
         packInstalls = { installed },
         hasThemeManager = hasThemeManager,
@@ -609,6 +611,12 @@ class MainViewModelTest {
         assertThat(done.lastTheme).isNull()
         assertThat(store.packs.keys).containsExactly("my pack · dark")
         assertThat(store.target).isEqualTo("ICON_PACK")
+        val record = library.records.values.single()
+        assertThat(record.kind).isEqualTo(ExportKind.ICON_PACK)
+        assertThat(record.title).isEqualTo("My pack · Dark")
+        assertThat(record.style).isEqualTo(IconStyle.DARK)
+        assertThat(record.plate).isEqualTo(dark.background)
+        assertThat(record.packageName).isEqualTo(request.packageName)
     }
 
     @Test
@@ -652,7 +660,7 @@ class MainViewModelTest {
         val store = FakeStore()
         val vm = MainViewModel(
             apps = fakeApps, loader = fakeLoader, palettes = fakePalettes, store = store,
-            runner = ExportRunner(CoroutineScope(dispatcher), exporter, slow, saver, store) {},
+            runner = ExportRunner(CoroutineScope(dispatcher), exporter, slow, saver, store, library) {},
             saver = saver, packInstalls = { installed }, hasThemeManager = true, systemStyle = IconStyle.DARK,
             iconPx = 160, detailPx = 264, loadDispatcher = dispatcher, workDispatcher = dispatcher,
         )

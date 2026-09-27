@@ -4,7 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import dev.abhay.hypericon.ui.MainScreen
+import dev.abhay.hypericon.ui.AppRoot
 import dev.abhay.hypericon.ui.theme.HyperIconTheme
 
 class MainActivity : ComponentActivity() {
@@ -13,7 +13,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             HyperIconTheme {
-                MainScreen()
+                AppRoot()
             }
         }
     }

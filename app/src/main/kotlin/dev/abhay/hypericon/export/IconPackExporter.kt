@@ -15,6 +15,7 @@ import dev.abhay.hypericon.iconpack.PackNaming
 import dev.abhay.hypericon.iconpack.PackSpec
 import dev.abhay.hypericon.model.GlyphSource
 import dev.abhay.hypericon.model.IconPalette
+import dev.abhay.hypericon.model.IconStyle
 import dev.abhay.hypericon.model.LauncherApp
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -48,6 +49,8 @@ data class PackRequest(
     val apps: List<PackApp>,
     /** Colours of the pack's own icon. */
     val iconPalette: IconPalette,
+    /** The pack's icon style (every unedited icon uses it). */
+    val style: IconStyle? = null,
 ) {
     val packageName: String get() = PackNaming.packageFor(name)
 }

@@ -9,7 +9,14 @@ import androidx.core.net.toUri
 import java.io.File
 
 /** Where a saved export ended up. */
-data class SavedExport(val uri: String, val displayPath: String, val absolutePath: String)
+data class SavedExport(
+    val uri: String,
+    val displayPath: String,
+    /** Filesystem path (what Theme Manager is given); empty when there's none (a folder off internal storage). */
+    val absolutePath: String,
+    /** The file name used (the destination may rename on a clash). */
+    val name: String = displayPath.substringAfterLast('/'),
+)
 
 interface ExportSaver {
     /** Copies the finished file to shared storage. */

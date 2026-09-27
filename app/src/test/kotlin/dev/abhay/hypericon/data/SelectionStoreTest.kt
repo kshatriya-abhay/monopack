@@ -77,4 +77,15 @@ class SelectionStoreTest {
             "di/.D", IconEdit(IconStyle.DARK, glyphToneOffset = 2, inverted = true),
         )
     }
+
+    @Test
+    fun `library records round-trip and bad entries are skipped`() {
+        val records = mapOf(
+            "a.mtz" to dev.abhay.hypericon.library.ExportRecord("a.mtz", dev.abhay.hypericon.export.ExportKind.THEME, "A · Dark", IconStyle.DARK, 5, 208, 1, 2),
+            "b.apk" to dev.abhay.hypericon.library.ExportRecord("b.apk", dev.abhay.hypericon.export.ExportKind.ICON_PACK, "B · Light", IconStyle.LIGHT, 6, 200, packageName = "p.b", versionCode = 7),
+        )
+        val json = dev.abhay.hypericon.library.RecordsJson.encode(records)
+        assertThat(dev.abhay.hypericon.library.RecordsJson.decode(json)).isEqualTo(records)
+        assertThat(dev.abhay.hypericon.library.RecordsJson.decode("""{"x": {"kind": "NOPE"}, "y": 3}""")).isEmpty()
+    }
 }

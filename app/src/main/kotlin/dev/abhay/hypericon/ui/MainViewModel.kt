@@ -390,7 +390,7 @@ class MainViewModel(
                         darkPreview = style == IconStyle.DARK,
                     )
                 }
-                ExportJob.Themes(requests, preferredStyle = committed.style)
+                ExportJob.Themes(requests, preferredStyle = committed.style, pairs = pairs)
             }
             ExportTarget.ICON_PACK -> {
                 // One style for every icon, in light and dark mode (like a HyperOS theme); edited
@@ -415,6 +415,7 @@ class MainViewModel(
                             )
                         },
                         iconPalette = pairs.getValue(style),
+                        style = style,
                     ),
                 )
             }

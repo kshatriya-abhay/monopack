@@ -12,6 +12,9 @@ import dev.abhay.hypericon.export.ExportService
 import dev.abhay.hypericon.export.IconPackExporter
 import dev.abhay.hypericon.export.MtzExporter
 import dev.abhay.hypericon.export.PackSigner
+import dev.abhay.hypericon.library.DataStoreLibraryStore
+import dev.abhay.hypericon.library.FolderSaver
+import dev.abhay.hypericon.library.SafLibraryFolder
 import dev.abhay.hypericon.palette.PaletteProvider
 import dev.abhay.hypericon.ui.DrawerItemLoader
 import kotlinx.coroutines.CoroutineScope
@@ -30,7 +33,9 @@ class AppContainer(context: Context) {
     val itemLoader = DrawerItemLoader(iconLoader)
     val selectionStore = DataStoreSelectionStore(context)
     val exporter = MtzExporter(context, iconLoader)
-    val exportSaver = DownloadsSaver(context)
+    val libraryStore = DataStoreLibraryStore(context)
+    val libraryFolder = SafLibraryFolder(context)
+    val exportSaver = FolderSaver(libraryStore, libraryFolder, DownloadsSaver(context))
     private val packSigner = PackSigner()
     val packInstalls = AndroidPackInstalls(context, packSigner)
 
@@ -41,6 +46,7 @@ class AppContainer(context: Context) {
         packExporter = IconPackExporter(context, iconLoader, packSigner),
         saver = exportSaver,
         store = selectionStore,
+        library = libraryStore,
         background = { ExportService.start(context) },
     )
 }

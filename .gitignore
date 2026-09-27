@@ -11,3 +11,7 @@ captures/
 __pycache__/
 .venv/
 
+
+# Planning and research notes (kept locally, not committed)
+implementation-plan.md
+docs/findings.md

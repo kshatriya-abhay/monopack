@@ -20,9 +20,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -46,12 +50,21 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.abhay.hypericon.export.ThemeApplier
+import dev.abhay.hypericon.library.ApplyTheme
 import dev.abhay.hypericon.model.ColorSource
 import dev.abhay.hypericon.model.GlyphSource
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen(viewModel: MainViewModel = viewModel(factory = MainViewModel.Factory)) {
+fun MainScreen(
+    viewModel: MainViewModel = viewModel(factory = MainViewModel.Factory),
+    /** Back to the library (home). */
+    onBack: () -> Unit = {},
+    /** Shows the library folder in a file manager (to install a pack). */
+    onOpenFolder: () -> Boolean = { false },
+    /** Apply icons, with the first-time explanation and the file-name toast. */
+    applyTheme: ApplyTheme = ApplyTheme {},
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     /** The app whose details sheet is open. */
@@ -85,17 +98,11 @@ fun MainScreen(viewModel: MainViewModel = viewModel(factory = MainViewModel.Fact
                         )
                     } else {
                         TopAppBar(
-                            title = { Text("HyperIcon") },
+                            title = { Text("Create") },
+                            navigationIcon = {
+                                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                            },
                             actions = {
-                                // HyperOS sometimes drops applied icons; this re-applies the last theme in one tap.
-                                val lastTheme = state.lastTheme
-                                if (lastTheme != null && state.lastThemeAvailable) {
-                                    TextButton(onClick = {
-                                        val applied = ThemeApplier.apply(context, lastTheme.absolutePath)
-                                        val message = if (applied) "Reapplying ${lastTheme.title}" else "Theme Manager isn't available"
-                                        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-                                    }) { Text("Reapply") }
-                                }
                                 TextButton(onClick = viewModel::refresh, enabled = state.iconsReady) { Text("Refresh") }
                                 TextButton(onClick = { exportOptions = viewModel.defaultExportOptions() }, enabled = state.exportEnabled) {
                                     Text("Export")
@@ -218,6 +225,8 @@ fun MainScreen(viewModel: MainViewModel = viewModel(factory = MainViewModel.Fact
         onDismiss = viewModel::dismissExport,
         onSaveCopy = viewModel::saveCopy,
         onApplied = viewModel::onThemeApplied,
+        onOpenFolder = onOpenFolder,
+        applyTheme = applyTheme,
         onHide = viewModel::hideExportDialog,
         dialogHidden = state.exportDialogHidden,
     )

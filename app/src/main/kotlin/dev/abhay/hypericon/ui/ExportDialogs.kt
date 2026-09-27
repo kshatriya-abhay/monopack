@@ -51,7 +51,8 @@ import dev.abhay.hypericon.export.ExportKind
 import dev.abhay.hypericon.export.ExportState
 import dev.abhay.hypericon.export.ExportedFile
 import dev.abhay.hypericon.export.LauncherHints
-import dev.abhay.hypericon.export.ThemeApplier
+import dev.abhay.hypericon.library.ApplyTheme
+import dev.abhay.hypericon.library.ThemeToApply
 import dev.abhay.hypericon.model.IconStyle
 import java.text.DateFormat
 import java.util.Date
@@ -224,6 +225,9 @@ fun ExportDialogs(
     /** Hides the progress dialog; the export continues with its notification. */
     onHide: () -> Unit = {},
     dialogHidden: Boolean = false,
+    /** Shows the library folder in a file manager (to install a pack); false if nothing could. */
+    onOpenFolder: () -> Boolean = { false },
+    applyTheme: ApplyTheme = ApplyTheme {},
 ) {
     val context = LocalContext.current
     var saving by remember { mutableStateOf<ExportedFile?>(null) }
@@ -297,6 +301,8 @@ fun ExportDialogs(
                     val hint = remember { LauncherHints.forLauncher(LauncherHints.defaultLauncher(context)) }
                     Spacer(Modifier.height(8.dp))
                     Text(hint, style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(4.dp))
+                    Hint("After updating a pack, restart your launcher (or pick the pack again) to load the new icons.")
                 }
                 state.files.forEach { file ->
                     Spacer(Modifier.height(12.dp))
@@ -311,16 +317,17 @@ fun ExportDialogs(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (file.kind == ExportKind.ICON_PACK) {
                             Button(onClick = {
-                                runCatching {
+                                val opened = onOpenFolder() || runCatching {
                                     context.startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                                }.onFailure { Toast.makeText(context, "No Downloads app found", Toast.LENGTH_SHORT).show() }
-                            }) { Text("Open Downloads") }
+                                }.isSuccess
+                                if (!opened) Toast.makeText(context, "No file manager found", Toast.LENGTH_SHORT).show()
+                            }) { Text("Open folder") }
                         } else {
                             Button(onClick = {
-                                if (ThemeApplier.apply(context, file.absolutePath)) {
-                                    onApplied(file)
+                                if (file.absolutePath.isEmpty()) {
+                                    Toast.makeText(context, "Themes can only be applied from internal storage", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    Toast.makeText(context, "Theme Manager isn't available", Toast.LENGTH_SHORT).show()
+                                    applyTheme(ThemeToApply(file.absolutePath, file.fileName) { onApplied(file) })
                                 }
                             }) { Text("Apply icons") }
                         }
