@@ -85,18 +85,24 @@ class MainViewModelTest {
     }
 
     private class FakeExporter : ThemeExporter {
-        var request: ExportRequest? = null
+        val requests = mutableListOf<ExportRequest>()
+        val request get() = requests.lastOrNull()
         override suspend fun export(request: ExportRequest, onProgress: (Int, Int) -> Unit): File {
-            this.request = request
+            requests += request
             request.apps.indices.forEach { onProgress(it + 1, request.apps.size) }
             return File(request.fileName)
         }
+
+        override suspend fun clearCache() = Unit
     }
 
     private val exporter = FakeExporter()
 
     private val saver = object : ExportSaver {
-        override suspend fun save(file: File) = SavedExport("content://downloads/1", "Download/HyperIcon/${file.name}")
+        override suspend fun save(file: File) =
+            SavedExport("content://downloads/1", "Download/HyperIcon/${file.name}", "/sdcard/Download/HyperIcon/${file.name}")
+
+        override suspend fun copyTo(file: File, uri: String) = Unit
     }
 
     private fun TestScope.viewModel(store: SelectionStore = FakeStore()) = MainViewModel(
@@ -253,16 +259,19 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `export needs a preview and exports package icons with flips applied`() = runTest(dispatcher) {
+    fun `export needs a preview and exports every launcher entry with flips applied`() = runTest(dispatcher) {
         val vm = viewModel()
         advanceUntilIdle()
         assertThat(vm.state.value.exportEnabled).isFalse()
+        assertThat(vm.defaultExportOptions()).isNull()
 
         vm.preview()
         val beta = vm.state.value.items[1]
         vm.onLongPress(beta)
         vm.flipSelected()
-        vm.export(java.time.LocalDateTime.of(2026, 9, 27, 10, 15))
+        val options = vm.defaultExportOptions()!!
+        assertThat(options).isEqualTo(ExportOptions("HyperIcon · Primary", setOf(IconStyle.DARK)))
+        vm.export(options, java.time.LocalDateTime.of(2026, 9, 27, 10, 15))
         advanceUntilIdle()
 
         val request = exporter.request!!
@@ -275,15 +284,69 @@ class MainViewModelTest {
         assertThat(request.apps.first().folders).containsExactly("a.native.Main", "a.native").inOrder()
 
         val done = vm.state.value.export as ExportState.Done
-        assertThat(done.location).isEqualTo("Download/HyperIcon/HyperIcon-Primary-Dark-20260927-1015.mtz")
-        assertThat(done.iconCount).isEqualTo(3)
+        val file = done.files.single()
+        assertThat(file.location).isEqualTo("Download/HyperIcon/HyperIcon-Primary-Dark-20260927-1015.mtz")
+        assertThat(file.absolutePath).isEqualTo("/sdcard/Download/HyperIcon/HyperIcon-Primary-Dark-20260927-1015.mtz")
+        assertThat(file.iconCount).isEqualTo(3)
         vm.dismissExport()
         assertThat(vm.state.value.export).isEqualTo(ExportState.Idle)
+    }
+
+    @Test
+    fun `exporting both styles makes two themes with swapped pairs`() = runTest(dispatcher) {
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.preview() // Dark icons
+        vm.onLongPress(vm.state.value.items[1])
+        vm.flipSelected()
+        vm.export(ExportOptions("Mine", setOf(IconStyle.LIGHT, IconStyle.DARK)), java.time.LocalDateTime.of(2026, 9, 27, 10, 15))
+        advanceUntilIdle()
+
+        val (lightReq, darkReq) = exporter.requests
+        val dark = wallpaper[Accent.PRIMARY]!![IconStyle.DARK]
+        val light = wallpaper[Accent.PRIMARY]!![IconStyle.LIGHT]
+        assertThat(lightReq.title).isEqualTo("Mine · Light")
+        assertThat(lightReq.apps.map { it.palette }).containsExactly(light, dark, light).inOrder()
+        assertThat(darkReq.title).isEqualTo("Mine · Dark")
+        assertThat(darkReq.apps.map { it.palette }).containsExactly(dark, light, dark).inOrder()
+        assertThat((vm.state.value.export as ExportState.Done).files.map { it.style })
+            .containsExactly(IconStyle.LIGHT, IconStyle.DARK).inOrder()
+    }
+
+    @Test
+    fun `generated icons can be left out`() = runTest(dispatcher) {
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.preview()
+        vm.export(ExportOptions("x", setOf(IconStyle.DARK), includeGenerated = false))
+        advanceUntilIdle()
+        assertThat(exporter.request!!.apps.map { it.app.label }).containsExactly("Alpha")
     }
 
     @Test
     fun `custom colours are named in the export title`() {
         val selection = Selection(IconStyle.LIGHT, Accent.TERTIARY, ColorSource.CUSTOM, SeedPresets.AOSP[4])
         assertThat(MainViewModel.exportTitle(selection)).isEqualTo("HyperIcon · Blue · Tertiary · Light")
+        assertThat(MainViewModel.fileNameFor("My theme! · Light", java.time.LocalDateTime.of(2026, 1, 2, 3, 4)))
+            .isEqualTo("Mytheme-Light-20260102-0304.mtz")
+    }
+
+    @Test
+    fun `apply intent asks Theme Manager for icons only`() {
+        val intent = dev.abhay.hypericon.export.ThemeApplier.intent("/sdcard/Download/HyperIcon/t.mtz")
+        assertThat(intent.component?.flattenToString())
+            .isEqualTo("com.android.thememanager/com.android.thememanager.ApplyThemeForScreenshot")
+        assertThat(intent.getLongExtra("theme_apply_flags", -1)).isEqualTo(0x8L)
+        assertThat(intent.getLongExtra("theme_remove_flags", -1)).isEqualTo(0L)
+        assertThat(intent.getStringExtra("theme_file_path")).isEqualTo("/sdcard/Download/HyperIcon/t.mtz")
+        assertThat(intent.getStringExtra("api_called_from")).isEqualTo("com.android.thememanager")
+    }
+
+    @Test
+    fun `default palette banner can be dismissed for the session`() = runTest(dispatcher) {
+        val vm = viewModel()
+        assertThat(vm.state.value.defaultPaletteBannerDismissed).isFalse()
+        vm.dismissDefaultPaletteBanner()
+        assertThat(vm.state.value.defaultPaletteBannerDismissed).isTrue()
     }
 }

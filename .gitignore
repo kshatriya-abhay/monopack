@@ -10,3 +10,6 @@ captures/
 *.mtz
 __pycache__/
 .venv/
+
+# Temporary: merge into implementation-plan.md, then delete the file and this entry
+phase-3-plan.md

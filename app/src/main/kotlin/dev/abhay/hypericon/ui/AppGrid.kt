@@ -4,6 +4,16 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.getValue
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Velocity
+import kotlin.math.abs
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -69,11 +79,39 @@ fun AppGrid(
     selected: Set<String>,
     onItemClick: (DrawerItem) -> Unit,
     onItemLongClick: (DrawerItem) -> Unit,
+    /** Called once per scroll gesture started by the user. */
+    onUserScroll: () -> Unit = {},
 ) {
     val layoutDirection = LocalLayoutDirection.current
+    val currentOnUserScroll by rememberUpdatedState(onUserScroll)
+    val scrollWatcher = remember {
+        object : NestedScrollConnection {
+            private var inGesture = false
+
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (!inGesture && source == NestedScrollSource.UserInput && abs(available.y) > 0.5f) {
+                    inGesture = true
+                    currentOnUserScroll()
+                }
+                return Offset.Zero
+            }
+
+            // The drag has ended (a fling may follow); the next drag counts as a new gesture.
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                inGesture = false
+                return Velocity.Zero
+            }
+        }
+    }
+    val gridState = rememberLazyGridState()
+    // The default-palette banner is the first item: scroll up so it's seen when it appears.
+    LaunchedEffect(header.showDefaultPaletteBanner) {
+        if (header.showDefaultPaletteBanner) gridState.animateScrollToItem(0)
+    }
     LazyVerticalGrid(
         columns = GridCells.Fixed(GRID_COLUMNS),
-        modifier = Modifier.fillMaxSize(),
+        state = gridState,
+        modifier = Modifier.fillMaxSize().nestedScroll(scrollWatcher),
         contentPadding = PaddingValues(
             start = contentPadding.calculateStartPadding(layoutDirection) + 8.dp,
             end = contentPadding.calculateEndPadding(layoutDirection) + 8.dp,
@@ -84,7 +122,7 @@ fun AppGrid(
     ) {
         if (header.showDefaultPaletteBanner) {
             item(key = "default-palette", span = { GridItemSpan(maxLineSpan) }) {
-                DefaultPaletteBanner(header.onUseCustomColours)
+                DefaultPaletteBanner(header.onUseCustomColours, header.onDismissDefaultPaletteBanner)
             }
         }
         if (colors == null) {
@@ -196,6 +234,7 @@ data class GridHeader(
     val showDefaultPaletteBanner: Boolean,
     val onFilterChange: (GridFilter) -> Unit,
     val onUseCustomColours: () -> Unit,
+    val onDismissDefaultPaletteBanner: () -> Unit = {},
 )
 
 @Composable
@@ -222,7 +261,7 @@ private val GridFilter.label
     }
 
 @Composable
-private fun DefaultPaletteBanner(onUseCustomColours: () -> Unit) {
+private fun DefaultPaletteBanner(onUseCustomColours: () -> Unit, onDismiss: () -> Unit) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
@@ -232,8 +271,9 @@ private fun DefaultPaletteBanner(onUseCustomColours: () -> Unit) {
                 "Your system isn't sharing wallpaper colours, so these are Android's default blues.",
                 style = MaterialTheme.typography.bodyMedium,
             )
-            TextButton(onClick = onUseCustomColours, modifier = Modifier.align(Alignment.End)) {
-                Text("Use custom colours")
+            Row(modifier = Modifier.align(Alignment.End)) {
+                TextButton(onClick = onDismiss) { Text("Dismiss") }
+                TextButton(onClick = onUseCustomColours) { Text("Use custom colours") }
             }
         }
     }

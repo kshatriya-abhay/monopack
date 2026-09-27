@@ -41,6 +41,9 @@ data class ExportRequest(
 /** Builds a `.mtz` from a request. Implementations report progress as (done, total). */
 interface ThemeExporter {
     suspend fun export(request: ExportRequest, onProgress: (done: Int, total: Int) -> Unit): File
+
+    /** Removes earlier exports from the cache (the saved copies in Downloads stay). */
+    suspend fun clearCache()
 }
 
 /**
@@ -53,7 +56,6 @@ class MtzExporter(private val context: Context, private val icons: IconSourceLoa
 
     override suspend fun export(request: ExportRequest, onProgress: (Int, Int) -> Unit): File = withContext(Dispatchers.IO) {
         val dir = File(context.cacheDir, "exports").apply { mkdirs() }
-        dir.listFiles()?.forEach { it.delete() } // only the latest export is kept in the cache
         val bundle = File(dir, "icons.tmp")
         val part = File(dir, "${request.fileName}.part")
         val result = File(dir, request.fileName)
@@ -95,6 +97,11 @@ class MtzExporter(private val context: Context, private val icons: IconSourceLoa
             bundle.delete()
             part.delete()
         }
+    }
+
+    override suspend fun clearCache() = withContext(Dispatchers.IO) {
+        File(context.cacheDir, "exports").listFiles()?.forEach { it.delete() }
+        Unit
     }
 
     private class Rendered(val glyphPng: ByteArray, val preview: Bitmap?)

@@ -7,6 +7,8 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <!-- Applying exported icons through Theme Manager. -->
+        <package android:name="com.android.thememanager" />
     </queries>
 
     <application

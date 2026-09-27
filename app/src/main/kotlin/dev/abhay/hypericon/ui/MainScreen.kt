@@ -22,6 +22,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -41,6 +42,9 @@ import dev.abhay.hypericon.model.GlyphSource
 fun MainScreen(viewModel: MainViewModel = viewModel(factory = MainViewModel.Factory)) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var selected by remember { mutableStateOf<DrawerItem?>(null) }
+    var exportOptions by remember { mutableStateOf<ExportOptions?>(null) }
+    var collapseRequests by remember { mutableIntStateOf(0) }
+    var expandRequests by remember { mutableIntStateOf(0) }
     val committedColors = state.committedPalette?.let {
         remember(it) { IconColors(Color(it.background), Color(it.foreground)) }
     }
@@ -73,7 +77,9 @@ fun MainScreen(viewModel: MainViewModel = viewModel(factory = MainViewModel.Fact
                         title = { Text("HyperIcon") },
                         actions = {
                             TextButton(onClick = viewModel::refresh, enabled = state.iconsReady) { Text("Refresh") }
-                            TextButton(onClick = { viewModel.export() }, enabled = state.exportEnabled) { Text("Export") }
+                            TextButton(onClick = { exportOptions = viewModel.defaultExportOptions() }, enabled = state.exportEnabled) {
+                                Text("Export")
+                            }
                         },
                     )
                 }
@@ -93,6 +99,8 @@ fun MainScreen(viewModel: MainViewModel = viewModel(factory = MainViewModel.Fact
                 onSourceChange = viewModel::setColorSource,
                 onSeedChange = viewModel::setSeed,
                 onPreview = viewModel::preview,
+                collapseRequests = collapseRequests,
+                expandRequests = expandRequests,
             )
         },
     ) { padding ->
@@ -117,9 +125,15 @@ fun MainScreen(viewModel: MainViewModel = viewModel(factory = MainViewModel.Fact
                         GridFilter.GENERATED to state.total - state.count(GlyphSource.NATIVE_MONO),
                     ),
                     showCountsReady = state.iconsReady,
-                    showDefaultPaletteBanner = state.paletteLooksDefault && state.pending.source == ColorSource.WALLPAPER,
+                    showDefaultPaletteBanner = state.paletteLooksDefault &&
+                        state.pending.source == ColorSource.WALLPAPER &&
+                        !state.defaultPaletteBannerDismissed,
                     onFilterChange = viewModel::setFilter,
-                    onUseCustomColours = { viewModel.setColorSource(ColorSource.CUSTOM) },
+                    onUseCustomColours = {
+                        viewModel.setColorSource(ColorSource.CUSTOM)
+                        expandRequests++
+                    },
+                    onDismissDefaultPaletteBanner = viewModel::dismissDefaultPaletteBanner,
                 ),
                 contentPadding = padding,
                 flipColors = flipColors,
@@ -128,11 +142,28 @@ fun MainScreen(viewModel: MainViewModel = viewModel(factory = MainViewModel.Fact
                 onItemClick = { item -> if (state.selecting) viewModel.toggleSelection(item) else selected = item },
                 // Selecting only makes sense once the themed icons are shown.
                 onItemLongClick = { item -> if (committedColors != null) viewModel.onLongPress(item) else selected = item },
+                // Scrolling the icons collapses the control panel.
+                onUserScroll = { collapseRequests++ },
             )
         }
     }
 
-    ExportDialogs(state.export, onCancel = viewModel::cancelExport, onDismiss = viewModel::dismissExport)
+    exportOptions?.let { defaults ->
+        ExportOptionsSheet(
+            defaults = defaults,
+            onExport = {
+                exportOptions = null
+                viewModel.export(it)
+            },
+            onDismiss = { exportOptions = null },
+        )
+    }
+    ExportDialogs(
+        state = state.export,
+        onCancel = viewModel::cancelExport,
+        onDismiss = viewModel::dismissExport,
+        onSaveCopy = viewModel::saveCopy,
+    )
 
     selected?.let { item ->
         AppDetailsSheet(

@@ -4,6 +4,9 @@ import android.graphics.Bitmap
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -14,6 +17,9 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.swipe
 import androidx.compose.ui.unit.dp
 import dev.abhay.hypericon.model.Accent
 import dev.abhay.hypericon.model.ColorSource
@@ -58,10 +64,56 @@ class ControlPanelTest {
 
         compose.onNodeWithText("Not previewed yet").performClick()
         compose.onNodeWithText("Icon style").assertDoesNotExist()
-        compose.onNodeWithText("Preview").assertIsDisplayed()
+        compose.onNodeWithText("Preview").assertDoesNotExist()
         snapshot("collapsed")
 
         compose.onNodeWithText("Not previewed yet").performClick()
+        compose.onNodeWithText("Icon style").assertIsDisplayed()
+    }
+
+    @Test
+    fun draggingTheHeaderCollapsesAndExpands() {
+        compose.setContent {
+            HyperIconTheme {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+                    ControlPanel(state, {}, {}, {}, {}, {})
+                }
+            }
+        }
+        compose.onNodeWithText("Not previewed yet").performTouchInput { swipe(center, center + Offset(0f, 1200f), durationMillis = 400) }
+        compose.waitForIdle()
+        compose.onNodeWithText("Icon style").assertDoesNotExist()
+        snapshot("dragged-collapsed")
+
+        compose.onNodeWithText("Not previewed yet").performTouchInput { swipe(center, center - Offset(0f, 1200f), durationMillis = 400) }
+        compose.waitForIdle()
+        compose.onNodeWithText("Icon style").assertIsDisplayed()
+        snapshot("dragged-expanded")
+    }
+
+    @Test
+    fun collapseRequestCollapsesThePanel() {
+        var requests by mutableIntStateOf(0)
+        compose.setContent {
+            HyperIconTheme { ControlPanel(state, {}, {}, {}, {}, {}, collapseRequests = requests) }
+        }
+        compose.onNodeWithText("Icon style").assertIsDisplayed()
+        requests++
+        compose.waitForIdle()
+        compose.onNodeWithText("Icon style").assertDoesNotExist()
+        compose.onNodeWithText("Preview").assertDoesNotExist()
+    }
+
+    @Test
+    fun expandRequestExpandsACollapsedPanel() {
+        var expand by mutableIntStateOf(0)
+        compose.setContent {
+            HyperIconTheme { ControlPanel(state, {}, {}, {}, {}, {}, collapseRequests = 1, expandRequests = expand) }
+        }
+        compose.waitForIdle()
+        compose.onNodeWithText("Icon style").assertDoesNotExist()
+        expand++
+        compose.waitForIdle()
         compose.onNodeWithText("Icon style").assertIsDisplayed()
     }
 
@@ -79,7 +131,7 @@ class ControlPanelTest {
         compose.setContent {
             HyperIconTheme { ControlPanel(state.copy(scanning = true), {}, {}, {}, {}, {}) }
         }
-        compose.onNodeWithText("0%").assertIsNotEnabled()
+        compose.onNodeWithText("Preparing icons… 0%").assertIsNotEnabled()
     }
 
     private fun snapshot(name: String) {

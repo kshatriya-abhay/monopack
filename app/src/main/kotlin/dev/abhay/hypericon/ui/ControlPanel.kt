@@ -1,7 +1,18 @@
 package dev.abhay.hypericon.ui
 
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -66,32 +77,65 @@ fun ControlPanel(
     onSourceChange: (ColorSource) -> Unit,
     onSeedChange: (Seed) -> Unit,
     onPreview: () -> Unit,
+    /** Incremented by the screen to request a collapse (e.g. when the grid is scrolled). */
+    collapseRequests: Int = 0,
+    /** Incremented by the screen to request an expand (e.g. from the default-palette banner). */
+    expandRequests: Int = 0,
 ) {
     var showCustomSheet by rememberSaveable { mutableStateOf(false) }
     var expanded by rememberSaveable { mutableStateOf(true) }
-    val chevronRotation by animateFloatAsState(if (expanded) 0f else 180f, label = "chevron")
+    val scope = rememberCoroutineScope()
+    // How much of the controls is revealed (0 = collapsed, 1 = expanded); follows the finger while dragging.
+    val reveal = remember { Animatable(if (expanded) 1f else 0f) }
+    var controlsHeight by remember { mutableIntStateOf(0) }
+    val showControls by remember { derivedStateOf { reveal.value > 0f } }
+    // The chevron points down when expanded (tap to collapse) and up when collapsed.
+    val chevronRotation by remember { derivedStateOf { 180f * reveal.value } }
+
+    fun settle(target: Boolean) {
+        expanded = target
+        scope.launch { reveal.animateTo(if (target) 1f else 0f, spring(stiffness = Spring.StiffnessMediumLow)) }
+    }
+
+    LaunchedEffect(collapseRequests) {
+        if (collapseRequests > 0 && expanded) settle(false)
+    }
+    LaunchedEffect(expandRequests) {
+        if (expandRequests > 0 && !expanded) settle(true)
+    }
 
     Surface(tonalElevation = 3.dp, shadowElevation = 6.dp) {
         Column(
             Modifier
                 .fillMaxWidth()
-                .navigationBarsPadding()
-                .animateContentSize(),
+                .navigationBarsPadding(),
         ) {
             // Header: always visible.
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .clickable(onClickLabel = if (expanded) "Collapse controls" else "Expand controls") { expanded = !expanded }
+                    .clickable(onClickLabel = if (expanded) "Collapse controls" else "Expand controls") { settle(!expanded) }
                     .pointerInput(Unit) {
-                        var drag = 0f
+                        val velocity = VelocityTracker()
                         detectVerticalDragGestures(
-                            onDragStart = { drag = 0f },
+                            onDragStart = { velocity.resetTracking() },
                             onDragEnd = {
-                                if (drag > DRAG_THRESHOLD.toPx()) expanded = false
-                                if (drag < -DRAG_THRESHOLD.toPx()) expanded = true
+                                val v = velocity.calculateVelocity().y
+                                val fling = FLING_VELOCITY.toPx()
+                                settle(
+                                    when {
+                                        v > fling -> false // flung down
+                                        v < -fling -> true // flung up
+                                        else -> reveal.value > 0.5f
+                                    },
+                                )
                             },
-                        ) { _, dy -> drag += dy }
+                            onDragCancel = { settle(reveal.value > 0.5f) },
+                        ) { change, dy ->
+                            velocity.addPosition(change.uptimeMillis, change.position)
+                            val height = controlsHeight.coerceAtLeast(1)
+                            scope.launch { reveal.snapTo((reveal.value - dy / height).coerceIn(0f, 1f)) }
+                        }
                     }
                     .padding(horizontal = 16.dp)
                     .padding(top = 8.dp, bottom = 12.dp),
@@ -121,28 +165,24 @@ fun ControlPanel(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
-                    Spacer(Modifier.width(8.dp))
-                    Button(
-                        onClick = {
-                            onPreview()
-                            expanded = false
-                        },
-                        enabled = state.previewEnabled,
-                        modifier = Modifier.semantics {
-                            if (!state.previewEnabled) {
-                                stateDescription = if (state.iconsReady) "Already previewing this selection" else "Preparing icons"
-                            }
-                        },
-                    ) {
-                        Text(if (state.iconsReady) "Preview" else "${(state.fetchProgress * 100).roundToInt()}%")
-                    }
-                    Chevron(Modifier.padding(start = 4.dp).rotate(chevronRotation))
+                    Chevron(Modifier.padding(start = 8.dp).rotate(chevronRotation))
                 }
             }
 
-            // Controls: collapsible.
-            if (expanded) {
-                Column(Modifier.padding(horizontal = 16.dp).padding(bottom = 12.dp)) {
+            // Controls: revealed by `reveal` (their full height is measured, the visible part clipped).
+            if (showControls) {
+                Column(
+                    Modifier
+                        .clipToBounds()
+                        .layout { measurable, constraints ->
+                            val placeable = measurable.measure(constraints.copy(maxHeight = Constraints.Infinity))
+                            controlsHeight = placeable.height
+                            val visible = (placeable.height * reveal.value).roundToInt()
+                            layout(placeable.width, visible) { placeable.place(0, 0) }
+                        }
+                        .padding(horizontal = 16.dp)
+                        .padding(bottom = 12.dp),
+                ) {
                     SectionLabel("Icon style")
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                         IconStyle.entries.forEachIndexed { index, style ->
@@ -186,6 +226,25 @@ fun ControlPanel(
                             ) { Text(accent.label) }
                         }
                     }
+                    Spacer(Modifier.height(16.dp))
+
+                    // Preview: at the bottom of the controls, so it collapses with them.
+                    Button(
+                        onClick = {
+                            onPreview()
+                            settle(false)
+                        },
+                        enabled = state.previewEnabled,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .semantics {
+                                if (!state.previewEnabled) {
+                                    stateDescription = if (state.iconsReady) "Already previewing this selection" else "Preparing icons"
+                                }
+                            },
+                    ) {
+                        Text(if (state.iconsReady) "Preview" else "Preparing icons… ${(state.fetchProgress * 100).roundToInt()}%")
+                    }
                 }
             }
         }
@@ -204,9 +263,10 @@ fun ControlPanel(
     }
 }
 
-private val DRAG_THRESHOLD = 24.dp
+/** A flick faster than this (per second) collapses or expands regardless of position. */
+private val FLING_VELOCITY = 600.dp
 
-/** A small "expand less" chevron (points up when the panel is expanded, i.e. "collapse"). */
+/** A small chevron pointing up (rotated to point down when the panel is expanded). */
 @Composable
 private fun Chevron(modifier: Modifier = Modifier) {
     val color = MaterialTheme.colorScheme.onSurfaceVariant

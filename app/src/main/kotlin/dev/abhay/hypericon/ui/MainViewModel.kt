@@ -43,11 +43,34 @@ import kotlin.math.roundToInt
 
 fun IconStyle.opposite(): IconStyle = if (this == IconStyle.LIGHT) IconStyle.DARK else IconStyle.LIGHT
 
+/** What the user chose in the export sheet. */
+data class ExportOptions(
+    /** Theme name without the style suffix, e.g. "HyperIcon · Primary". */
+    val name: String,
+    val styles: Set<IconStyle>,
+    /** Include apps whose glyph was generated (off: only apps with their own monochrome icon). */
+    val includeGenerated: Boolean = true,
+)
+
+/** One exported theme file. */
+data class ExportedFile(
+    val style: IconStyle,
+    val fileName: String,
+    /** Human-readable location, e.g. "Download/HyperIcon/…mtz". */
+    val location: String,
+    val uri: String,
+    /** Filesystem path of the Downloads copy (what Theme Manager is given). */
+    val absolutePath: String,
+    /** The copy in the app's cache (source for "Save as…"). */
+    val cachePath: String,
+    val iconCount: Int,
+)
+
 /** Progress of a theme export. */
 sealed interface ExportState {
     data object Idle : ExportState
-    data class Running(val done: Int, val total: Int) : ExportState
-    data class Done(val fileName: String, val location: String, val uri: String, val iconCount: Int) : ExportState
+    data class Running(val done: Int, val total: Int, val file: Int = 1, val files: Int = 1) : ExportState
+    data class Done(val files: List<ExportedFile>) : ExportState
     data class Failed(val message: String) : ExportState
 }
 
@@ -62,6 +85,8 @@ data class UiState(
     val palettes: Map<Accent, Map<IconStyle, IconPalette>> = emptyMap(),
     /** True when the system palettes are AOSP's framework defaults (no wallpaper colours). */
     val paletteLooksDefault: Boolean = false,
+    /** The default-palette banner was dismissed (for this session). */
+    val defaultPaletteBannerDismissed: Boolean = false,
     /** Palettes generated from the pending custom seed. */
     val customPalettes: Map<Accent, Map<IconStyle, IconPalette>> = emptyMap(),
     /** What the controls show. */
@@ -212,41 +237,62 @@ class MainViewModel(
 
     fun setFilter(filter: GridFilter) = _state.update { it.copy(filter = filter) }
 
+    fun dismissDefaultPaletteBanner() = _state.update { it.copy(defaultPaletteBannerDismissed = true) }
+
     private var exportJob: Job? = null
 
+    /** Default export options for the export sheet, from the previewed selection. */
+    fun defaultExportOptions(): ExportOptions? {
+        val committed = _state.value.committed ?: return null
+        return ExportOptions(name = exportName(committed), styles = setOf(committed.style))
+    }
+
     /**
-     * Exports the previewed icons as a `.mtz` (every launcher entry, flips applied) and saves it
-     * to Downloads.
+     * Exports the previewed icons as one `.mtz` per chosen icon style (every launcher entry,
+     * flips applied) and saves them to Downloads.
      */
-    fun export(now: java.time.LocalDateTime = java.time.LocalDateTime.now()) {
+    fun export(options: ExportOptions, now: java.time.LocalDateTime = java.time.LocalDateTime.now()) {
         val s = _state.value
-        if (!s.exportEnabled) return
+        if (!s.exportEnabled || options.styles.isEmpty()) return
         val committed = s.committed ?: return
-        val palette = s.committedPalette ?: return
-        val apps = s.items
-            .filter { it.glyph != null && it.glyph.source != GlyphSource.FAILED }
-            .map {
-                ExportApp(
-                    app = it.app,
-                    palette = if (it.app.key in s.flipped) s.committedFlipPalette ?: palette else palette,
-                    folders = MtzNaming.folders(it.app.packageName, it.app.component.className, it.app.isMainActivity),
-                )
-            }
-        val request = ExportRequest(
-            title = exportTitle(committed),
-            description = "Monochrome icons generated on-device by HyperIcon (${apps.size} apps).",
-            fileName = exportFileName(committed, now),
-            apps = apps,
-            darkPreview = committed.style == IconStyle.DARK,
-        )
-        _state.update { it.copy(export = ExportState.Running(0, apps.size)) }
+        val shown = s.committedPalette ?: return
+        val opposite = s.committedFlipPalette ?: shown
+        val entries = s.items.filter {
+            it.glyph != null && it.glyph.source != GlyphSource.FAILED &&
+                (options.includeGenerated || it.glyph.source == GlyphSource.NATIVE_MONO)
+        }
+        val styles = IconStyle.entries.filter { it in options.styles }
+        val requests = styles.map { style ->
+            // The committed style uses the previewed pair; the other style is the flip pair.
+            val normal = if (style == committed.style) shown else opposite
+            val flipped = if (style == committed.style) opposite else shown
+            val title = "${options.name.trim().ifEmpty { "HyperIcon" }} · ${style.displayName}"
+            style to ExportRequest(
+                title = title,
+                description = "Monochrome icons generated on-device by HyperIcon (${entries.size} apps).",
+                fileName = fileNameFor(title, now),
+                apps = entries.map {
+                    ExportApp(
+                        app = it.app,
+                        palette = if (it.app.key in s.flipped) flipped else normal,
+                        folders = MtzNaming.folders(it.app.packageName, it.app.component.className, it.app.isMainActivity),
+                    )
+                },
+                darkPreview = style == IconStyle.DARK,
+            )
+        }
+        _state.update { it.copy(export = ExportState.Running(0, entries.size, 1, requests.size)) }
         exportJob = viewModelScope.launch {
             try {
-                val file = exporter.export(request) { done, total ->
-                    _state.update { it.copy(export = ExportState.Running(done, total)) }
+                exporter.clearCache()
+                val files = requests.mapIndexed { index, (style, request) ->
+                    val file = exporter.export(request) { done, total ->
+                        _state.update { it.copy(export = ExportState.Running(done, total, index + 1, requests.size)) }
+                    }
+                    val saved = saver.save(file)
+                    ExportedFile(style, file.name, saved.displayPath, saved.uri, saved.absolutePath, file.path, request.apps.size)
                 }
-                val saved = saver.save(file)
-                _state.update { it.copy(export = ExportState.Done(file.name, saved.displayPath, saved.uri, apps.size)) }
+                _state.update { it.copy(export = ExportState.Done(files)) }
             } catch (e: CancellationException) {
                 _state.update { it.copy(export = ExportState.Idle) }
                 throw e
@@ -254,6 +300,16 @@ class MainViewModel(
                 Log.w(TAG, "Export failed", e)
                 _state.update { it.copy(export = ExportState.Failed(e.message ?: e.javaClass.simpleName)) }
             }
+        }
+    }
+
+    /** Copies an exported file to a document the user picked ("Save as…"). */
+    fun saveCopy(file: ExportedFile, uri: String, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val ok = runCatching { saver.copyTo(java.io.File(file.cachePath), uri) }
+                .onFailure { Log.w(TAG, "Save as failed", it) }
+                .isSuccess
+            onResult(ok)
         }
     }
 
@@ -358,20 +414,24 @@ class MainViewModel(
     }
 
     companion object {
-        /** "HyperIcon · Blue · Primary · Dark" (the seed name only for custom colours). */
-        fun exportTitle(selection: Selection): String = buildList {
+        /** "HyperIcon · Blue · Primary" (the seed name only for custom colours). */
+        fun exportName(selection: Selection): String = buildList {
             add("HyperIcon")
             if (selection.source == ColorSource.CUSTOM) add(selection.seed.name)
             add(selection.accent.displayName)
-            add(if (selection.style == IconStyle.DARK) "Dark" else "Light")
         }.joinToString(" · ")
 
-        /** "HyperIcon-Blue-Primary-Dark-20260927-1015.mtz". */
-        fun exportFileName(selection: Selection, now: java.time.LocalDateTime): String {
-            val parts = exportTitle(selection).split(" · ").map { part -> part.filter { it.isLetterOrDigit() } }
+        /** "HyperIcon · Blue · Primary · Dark". */
+        fun exportTitle(selection: Selection): String = "${exportName(selection)} · ${selection.style.displayName}"
+
+        /** "HyperIcon-Blue-Primary-Dark-20260927-1015.mtz" (letters and digits of each part). */
+        fun fileNameFor(title: String, now: java.time.LocalDateTime): String {
+            val parts = title.split("·").map { part -> part.filter { it.isLetterOrDigit() } }.filter { it.isNotEmpty() }
             val stamp = now.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmm"))
-            return (parts + stamp).joinToString("-") + ".mtz"
+            return (parts.ifEmpty { listOf("HyperIcon") } + stamp).joinToString("-") + ".mtz"
         }
+
+        private val IconStyle.displayName get() = if (this == IconStyle.DARK) "Dark" else "Light"
 
         private val Accent.displayName get() = name.lowercase().replaceFirstChar { it.uppercase() }
 

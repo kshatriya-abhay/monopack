@@ -9,11 +9,14 @@ import android.provider.MediaStore
 import java.io.File
 
 /** Where a saved export ended up. */
-data class SavedExport(val uri: String, val displayPath: String)
+data class SavedExport(val uri: String, val displayPath: String, val absolutePath: String)
 
 interface ExportSaver {
     /** Copies the finished file to shared storage. */
     suspend fun save(file: File): SavedExport
+
+    /** Copies the finished file to a user-chosen document (Storage Access Framework). */
+    suspend fun copyTo(file: File, uri: String)
 }
 
 /** Saves to `Download/HyperIcon/` through MediaStore (no storage permission needed). */
@@ -40,7 +43,13 @@ class DownloadsSaver(private val context: Context) : ExportSaver {
         val name = resolver.query(uri, arrayOf(MediaStore.Downloads.DISPLAY_NAME), null, null, null)?.use {
             if (it.moveToFirst()) it.getString(0) else null
         } ?: file.name
-        return SavedExport(uri.toString(), "${Environment.DIRECTORY_DOWNLOADS}/$FOLDER/$name")
+        val absolute = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "$FOLDER/$name")
+        return SavedExport(uri.toString(), "${Environment.DIRECTORY_DOWNLOADS}/$FOLDER/$name", absolute.path)
+    }
+
+    override suspend fun copyTo(file: File, uri: String) {
+        context.contentResolver.openOutputStream(uri.toUri(), "wt")?.use { out -> file.inputStream().use { it.copyTo(out) } }
+            ?: error("Couldn't write to the chosen file")
     }
 
     companion object {
