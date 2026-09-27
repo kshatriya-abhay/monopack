@@ -73,6 +73,7 @@ fun MainScreen(viewModel: MainViewModel = viewModel(factory = MainViewModel.Fact
                         title = { Text("HyperIcon") },
                         actions = {
                             TextButton(onClick = viewModel::refresh, enabled = state.iconsReady) { Text("Refresh") }
+                            TextButton(onClick = { viewModel.export() }, enabled = state.exportEnabled) { Text("Export") }
                         },
                     )
                 }
@@ -130,6 +131,8 @@ fun MainScreen(viewModel: MainViewModel = viewModel(factory = MainViewModel.Fact
             )
         }
     }
+
+    ExportDialogs(state.export, onCancel = viewModel::cancelExport, onDismiss = viewModel::dismissExport)
 
     selected?.let { item ->
         AppDetailsSheet(

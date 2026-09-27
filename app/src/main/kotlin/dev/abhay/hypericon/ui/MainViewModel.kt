@@ -12,6 +12,11 @@ import dev.abhay.hypericon.apps.AppSource
 import dev.abhay.hypericon.appContainer
 import dev.abhay.hypericon.data.SavedSelections
 import dev.abhay.hypericon.data.SelectionStore
+import dev.abhay.hypericon.export.ExportApp
+import dev.abhay.hypericon.export.ExportRequest
+import dev.abhay.hypericon.export.ExportSaver
+import dev.abhay.hypericon.export.ThemeExporter
+import dev.abhay.hypericon.mtz.MtzNaming
 import dev.abhay.hypericon.model.Accent
 import dev.abhay.hypericon.model.ColorSource
 import dev.abhay.hypericon.model.GlyphSource
@@ -37,6 +42,14 @@ import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 fun IconStyle.opposite(): IconStyle = if (this == IconStyle.LIGHT) IconStyle.DARK else IconStyle.LIGHT
+
+/** Progress of a theme export. */
+sealed interface ExportState {
+    data object Idle : ExportState
+    data class Running(val done: Int, val total: Int) : ExportState
+    data class Done(val fileName: String, val location: String, val uri: String, val iconCount: Int) : ExportState
+    data class Failed(val message: String) : ExportState
+}
 
 /** Which apps the grid shows. */
 enum class GridFilter { ALL, NATIVE, GENERATED }
@@ -70,7 +83,11 @@ data class UiState(
     val flipped: Set<String> = emptySet(),
     /** Apps selected with long-press; non-empty means selection mode. */
     val selected: Set<String> = emptySet(),
+    val export: ExportState = ExportState.Idle,
 ) {
+    /** Export needs a preview (so what you export is what you saw) and all icons loaded. */
+    val exportEnabled: Boolean get() = committed != null && committedPalette != null && iconsReady && export !is ExportState.Running
+
     val selecting: Boolean get() = selected.isNotEmpty()
 
     /** True if every selected app is already flipped (so the action restores them). */
@@ -108,6 +125,8 @@ class MainViewModel(
     private val loader: ItemLoader,
     private val palettes: PaletteSource,
     private val store: SelectionStore,
+    private val exporter: ThemeExporter,
+    private val saver: ExportSaver,
     systemStyle: IconStyle,
     private val iconPx: Int,
     private val detailPx: Int,
@@ -192,6 +211,58 @@ class MainViewModel(
     }
 
     fun setFilter(filter: GridFilter) = _state.update { it.copy(filter = filter) }
+
+    private var exportJob: Job? = null
+
+    /**
+     * Exports the previewed icons as a `.mtz` (every launcher entry, flips applied) and saves it
+     * to Downloads.
+     */
+    fun export(now: java.time.LocalDateTime = java.time.LocalDateTime.now()) {
+        val s = _state.value
+        if (!s.exportEnabled) return
+        val committed = s.committed ?: return
+        val palette = s.committedPalette ?: return
+        val apps = s.items
+            .filter { it.glyph != null && it.glyph.source != GlyphSource.FAILED }
+            .map {
+                ExportApp(
+                    app = it.app,
+                    palette = if (it.app.key in s.flipped) s.committedFlipPalette ?: palette else palette,
+                    folders = MtzNaming.folders(it.app.packageName, it.app.component.className, it.app.isMainActivity),
+                )
+            }
+        val request = ExportRequest(
+            title = exportTitle(committed),
+            description = "Monochrome icons generated on-device by HyperIcon (${apps.size} apps).",
+            fileName = exportFileName(committed, now),
+            apps = apps,
+            darkPreview = committed.style == IconStyle.DARK,
+        )
+        _state.update { it.copy(export = ExportState.Running(0, apps.size)) }
+        exportJob = viewModelScope.launch {
+            try {
+                val file = exporter.export(request) { done, total ->
+                    _state.update { it.copy(export = ExportState.Running(done, total)) }
+                }
+                val saved = saver.save(file)
+                _state.update { it.copy(export = ExportState.Done(file.name, saved.displayPath, saved.uri, apps.size)) }
+            } catch (e: CancellationException) {
+                _state.update { it.copy(export = ExportState.Idle) }
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Export failed", e)
+                _state.update { it.copy(export = ExportState.Failed(e.message ?: e.javaClass.simpleName)) }
+            }
+        }
+    }
+
+    fun cancelExport() {
+        exportJob?.cancel()
+        _state.update { it.copy(export = ExportState.Idle) }
+    }
+
+    fun dismissExport() = _state.update { it.copy(export = ExportState.Idle) }
 
     /** Called on every resume: refreshes wallpaper colors and picks up app changes. */
     fun onResume() {
@@ -287,6 +358,23 @@ class MainViewModel(
     }
 
     companion object {
+        /** "HyperIcon · Blue · Primary · Dark" (the seed name only for custom colours). */
+        fun exportTitle(selection: Selection): String = buildList {
+            add("HyperIcon")
+            if (selection.source == ColorSource.CUSTOM) add(selection.seed.name)
+            add(selection.accent.displayName)
+            add(if (selection.style == IconStyle.DARK) "Dark" else "Light")
+        }.joinToString(" · ")
+
+        /** "HyperIcon-Blue-Primary-Dark-20260927-1015.mtz". */
+        fun exportFileName(selection: Selection, now: java.time.LocalDateTime): String {
+            val parts = exportTitle(selection).split(" · ").map { part -> part.filter { it.isLetterOrDigit() } }
+            val stamp = now.format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmm"))
+            return (parts + stamp).joinToString("-") + ".mtz"
+        }
+
+        private val Accent.displayName get() = name.lowercase().replaceFirstChar { it.uppercase() }
+
         const val GRID_ICON_DP = 58f
         const val DETAIL_ICON_DP = 96f
         private const val PUBLISH_INTERVAL_MS = 80L
@@ -306,6 +394,8 @@ class MainViewModel(
                     loader = container.itemLoader,
                     palettes = container.paletteProvider,
                     store = container.selectionStore,
+                    exporter = container.exporter,
+                    saver = container.exportSaver,
                     systemStyle = if (night == Configuration.UI_MODE_NIGHT_YES) IconStyle.DARK else IconStyle.LIGHT,
                     iconPx = (GRID_ICON_DP * density).roundToInt(),
                     detailPx = (DETAIL_ICON_DP * density).roundToInt(),

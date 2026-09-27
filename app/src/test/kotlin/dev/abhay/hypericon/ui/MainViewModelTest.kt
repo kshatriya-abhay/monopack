@@ -8,6 +8,11 @@ import com.google.common.truth.Truth.assertThat
 import dev.abhay.hypericon.apps.AppSource
 import dev.abhay.hypericon.data.SavedSelections
 import dev.abhay.hypericon.data.SelectionStore
+import dev.abhay.hypericon.export.ExportRequest
+import dev.abhay.hypericon.export.ExportSaver
+import dev.abhay.hypericon.export.SavedExport
+import dev.abhay.hypericon.export.ThemeExporter
+import java.io.File
 import dev.abhay.hypericon.model.Accent
 import dev.abhay.hypericon.model.ColorSource
 import dev.abhay.hypericon.model.Glyph
@@ -79,11 +84,28 @@ class MainViewModelTest {
         }
     }
 
+    private class FakeExporter : ThemeExporter {
+        var request: ExportRequest? = null
+        override suspend fun export(request: ExportRequest, onProgress: (Int, Int) -> Unit): File {
+            this.request = request
+            request.apps.indices.forEach { onProgress(it + 1, request.apps.size) }
+            return File(request.fileName)
+        }
+    }
+
+    private val exporter = FakeExporter()
+
+    private val saver = object : ExportSaver {
+        override suspend fun save(file: File) = SavedExport("content://downloads/1", "Download/HyperIcon/${file.name}")
+    }
+
     private fun TestScope.viewModel(store: SelectionStore = FakeStore()) = MainViewModel(
         apps = fakeApps,
         loader = fakeLoader,
         palettes = fakePalettes,
         store = store,
+        exporter = exporter,
+        saver = saver,
         systemStyle = IconStyle.DARK,
         iconPx = 160,
         detailPx = 264,
@@ -228,5 +250,40 @@ class MainViewModelTest {
         val vm = viewModel(FakeStore(SavedSelections(selection, selection, palette)))
         advanceUntilIdle()
         assertThat(vm.state.value.committedFlipPalette).isEqualTo(seed.palettes()[Accent.SECONDARY]!![IconStyle.DARK])
+    }
+
+    @Test
+    fun `export needs a preview and exports package icons with flips applied`() = runTest(dispatcher) {
+        val vm = viewModel()
+        advanceUntilIdle()
+        assertThat(vm.state.value.exportEnabled).isFalse()
+
+        vm.preview()
+        val beta = vm.state.value.items[1]
+        vm.onLongPress(beta)
+        vm.flipSelected()
+        vm.export(java.time.LocalDateTime.of(2026, 9, 27, 10, 15))
+        advanceUntilIdle()
+
+        val request = exporter.request!!
+        assertThat(request.title).isEqualTo("HyperIcon · Primary · Dark")
+        assertThat(request.fileName).isEqualTo("HyperIcon-Primary-Dark-20260927-1015.mtz")
+        assertThat(request.apps.map { it.app.label }).containsExactly("Alpha", "Beta", "Gamma").inOrder()
+        val dark = wallpaper[Accent.PRIMARY]!![IconStyle.DARK]
+        val light = wallpaper[Accent.PRIMARY]!![IconStyle.LIGHT]
+        assertThat(request.apps.map { it.palette }).containsExactly(dark, light, dark).inOrder()
+        assertThat(request.apps.first().folders).containsExactly("a.native.Main", "a.native").inOrder()
+
+        val done = vm.state.value.export as ExportState.Done
+        assertThat(done.location).isEqualTo("Download/HyperIcon/HyperIcon-Primary-Dark-20260927-1015.mtz")
+        assertThat(done.iconCount).isEqualTo(3)
+        vm.dismissExport()
+        assertThat(vm.state.value.export).isEqualTo(ExportState.Idle)
+    }
+
+    @Test
+    fun `custom colours are named in the export title`() {
+        val selection = Selection(IconStyle.LIGHT, Accent.TERTIARY, ColorSource.CUSTOM, SeedPresets.AOSP[4])
+        assertThat(MainViewModel.exportTitle(selection)).isEqualTo("HyperIcon · Blue · Tertiary · Light")
     }
 }

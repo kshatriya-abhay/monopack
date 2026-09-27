@@ -5,6 +5,8 @@ import android.content.Context
 import dev.abhay.hypericon.apps.IconSourceLoader
 import dev.abhay.hypericon.apps.LauncherAppRepository
 import dev.abhay.hypericon.data.DataStoreSelectionStore
+import dev.abhay.hypericon.export.DownloadsSaver
+import dev.abhay.hypericon.export.MtzExporter
 import dev.abhay.hypericon.ui.DrawerItemLoader
 import dev.abhay.hypericon.palette.PaletteProvider
 
@@ -19,6 +21,8 @@ class AppContainer(context: Context) {
     val paletteProvider = PaletteProvider(context)
     val itemLoader = DrawerItemLoader(iconLoader)
     val selectionStore = DataStoreSelectionStore(context)
+    val exporter = MtzExporter(context, iconLoader)
+    val exportSaver = DownloadsSaver(context)
 }
 
 val Context.appContainer: AppContainer get() = (applicationContext as HyperIconApp).container
