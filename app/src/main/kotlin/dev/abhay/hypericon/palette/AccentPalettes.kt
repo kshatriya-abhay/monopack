@@ -52,8 +52,12 @@ object AccentPalettes {
  * resources resolve to the same value in day and night, so the icon style never depends on the
  * app's own theme.
  */
-class PaletteProvider(private val context: Context) {
-    fun load(): Map<Accent, Map<IconStyle, IconPalette>> =
+interface PaletteSource {
+    fun load(): Map<Accent, Map<IconStyle, IconPalette>>
+}
+
+class PaletteProvider(private val context: Context) : PaletteSource {
+    override fun load(): Map<Accent, Map<IconStyle, IconPalette>> =
         AccentPalettes.resolve { context.getColor(systemColor(it)) }
 
     companion object {

@@ -1,6 +1,14 @@
 package dev.abhay.hypericon.ui
 
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Canvas
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -22,7 +30,10 @@ import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.Card
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -50,8 +61,14 @@ const val GRID_COLUMNS = 5
 fun AppGrid(
     items: List<DrawerItem>,
     colors: IconColors?,
+    header: GridHeader,
     contentPadding: PaddingValues,
+    /** Colours for apps shown in the opposite icon style. */
+    flipColors: IconColors?,
+    flipped: Set<String>,
+    selected: Set<String>,
     onItemClick: (DrawerItem) -> Unit,
+    onItemLongClick: (DrawerItem) -> Unit,
 ) {
     val layoutDirection = LocalLayoutDirection.current
     LazyVerticalGrid(
@@ -65,8 +82,16 @@ fun AppGrid(
         ),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        if (header.showDefaultPaletteBanner) {
+            item(key = "default-palette", span = { GridItemSpan(maxLineSpan) }) {
+                DefaultPaletteBanner(header.onUseCustomColours)
+            }
+        }
         if (colors == null) {
             item(key = "hint", span = { GridItemSpan(maxLineSpan) }) { HintCard() }
+        }
+        if (header.showCountsReady) {
+            item(key = "filter", span = { GridItemSpan(maxLineSpan) }) { FilterRow(header) }
         }
         items(items, key = { it.app.key }) { item ->
             Column(
@@ -74,13 +99,17 @@ fun AppGrid(
                 modifier = Modifier
                     .fillMaxWidth()
                     .combinedClickable(
+                        onClickLabel = if (selected.isNotEmpty()) "Select" else "Details",
+                        onLongClickLabel = "Select to flip light/dark",
                         onClick = { onItemClick(item) },
-                        onLongClick = { onItemClick(item) },
+                        onLongClick = { onItemLongClick(item) },
                     )
                     .padding(vertical = 4.dp),
             ) {
-                Crossfade(targetState = colors, label = "icon") { current ->
-                    GridIcon(item, current)
+                val key = item.app.key
+                val itemColors = if (key in flipped && colors != null) flipColors ?: colors else colors
+                Crossfade(targetState = itemColors, label = "icon") { current ->
+                    GridIcon(item, current, selected = key in selected)
                 }
                 Spacer(Modifier.height(6.dp))
                 Text(
@@ -97,15 +126,21 @@ fun AppGrid(
 }
 
 @Composable
-private fun GridIcon(item: DrawerItem, colors: IconColors?) {
+private fun GridIcon(item: DrawerItem, colors: IconColors?, selected: Boolean) {
+    val scale by animateFloatAsState(if (selected) 0.86f else 1f, label = "select")
     Box(Modifier.size(MainViewModel.GRID_ICON_DP.dp)) {
         val original = item.original
         when {
             colors != null && item.glyph != null -> {
-                ThemedIcon(glyph = item.glyphImage, colors = colors, modifier = Modifier.fillMaxSize())
+                ThemedIcon(
+                    glyph = item.glyphImage,
+                    colors = colors,
+                    modifier = Modifier.fillMaxSize().scale(scale),
+                )
                 if (item.glyph.source != GlyphSource.NATIVE_MONO) {
                     GeneratedBadge(Modifier.align(Alignment.TopEnd))
                 }
+                if (selected) SelectedMark(Modifier.align(Alignment.BottomEnd))
             }
             original != null -> Image(
                 bitmap = original,
@@ -122,6 +157,24 @@ private fun GridIcon(item: DrawerItem, colors: IconColors?) {
     }
 }
 
+/** A filled check mark on selected icons. */
+@Composable
+private fun SelectedMark(modifier: Modifier) {
+    val fill = MaterialTheme.colorScheme.primary
+    val check = MaterialTheme.colorScheme.onPrimary
+    val ring = MaterialTheme.colorScheme.surface
+    Canvas(modifier.size(20.dp).semantics { contentDescription = "Selected" }) {
+        drawCircle(ring)
+        drawCircle(fill, radius = size.minDimension / 2 - 2.dp.toPx())
+        val path = Path().apply {
+            moveTo(size.width * 0.3f, size.height * 0.52f)
+            lineTo(size.width * 0.45f, size.height * 0.66f)
+            lineTo(size.width * 0.72f, size.height * 0.38f)
+        }
+        drawPath(path, check, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
+}
+
 /** Marks icons whose glyph was generated rather than supplied by the app. */
 @Composable
 private fun GeneratedBadge(modifier: Modifier) {
@@ -133,6 +186,57 @@ private fun GeneratedBadge(modifier: Modifier) {
             .background(MaterialTheme.colorScheme.tertiary, CircleShape)
             .semantics { contentDescription = "Auto-generated icon" },
     )
+}
+
+/** Content shown above the icons. */
+data class GridHeader(
+    val filter: GridFilter,
+    val counts: Map<GridFilter, Int>,
+    val showCountsReady: Boolean,
+    val showDefaultPaletteBanner: Boolean,
+    val onFilterChange: (GridFilter) -> Unit,
+    val onUseCustomColours: () -> Unit,
+)
+
+@Composable
+private fun FilterRow(header: GridHeader) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+    ) {
+        GridFilter.entries.forEach { filter ->
+            FilterChip(
+                selected = header.filter == filter,
+                onClick = { header.onFilterChange(filter) },
+                label = { Text("${filter.label} ${header.counts[filter] ?: 0}") },
+            )
+        }
+    }
+}
+
+private val GridFilter.label
+    get() = when (this) {
+        GridFilter.ALL -> "All"
+        GridFilter.NATIVE -> "Native"
+        GridFilter.GENERATED -> "Generated"
+    }
+
+@Composable
+private fun DefaultPaletteBanner(onUseCustomColours: () -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                "Your system isn't sharing wallpaper colours, so these are Android's default blues.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            TextButton(onClick = onUseCustomColours, modifier = Modifier.align(Alignment.End)) {
+                Text("Use custom colours")
+            }
+        }
+    }
 }
 
 @Composable

@@ -10,7 +10,7 @@ import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.captureToImage
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
@@ -63,6 +63,23 @@ class ControlPanelTest {
 
         compose.onNodeWithText("Not previewed yet").performClick()
         compose.onNodeWithText("Icon style").assertIsDisplayed()
+    }
+
+    @Test
+    fun previewIsDisabledWhenTheSelectionIsAlreadyShown() {
+        val shown = state.copy(committed = state.pending, committedPalette = state.pendingPalette)
+        compose.setContent {
+            HyperIconTheme { ControlPanel(shown, {}, {}, {}, {}, {}) }
+        }
+        compose.onNodeWithText("Preview").assertIsNotEnabled()
+    }
+
+    @Test
+    fun previewShowsProgressWhileIconsLoad() {
+        compose.setContent {
+            HyperIconTheme { ControlPanel(state.copy(scanning = true), {}, {}, {}, {}, {}) }
+        }
+        compose.onNodeWithText("0%").assertIsNotEnabled()
     }
 
     private fun snapshot(name: String) {

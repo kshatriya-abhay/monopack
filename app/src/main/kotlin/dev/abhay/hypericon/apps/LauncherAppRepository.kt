@@ -9,10 +9,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.Collator
 
-/** Lists every launcher activity visible to the app, sorted like an app drawer. */
-class LauncherAppRepository(private val context: Context) {
+/** Source of launcher apps (an interface so the ViewModel can be tested with fakes). */
+interface AppSource {
+    suspend fun scan(): List<LauncherApp>
+}
 
-    suspend fun scan(): List<LauncherApp> = withContext(Dispatchers.IO) {
+/** Lists every launcher activity visible to the app, sorted like an app drawer. */
+class LauncherAppRepository(private val context: Context) : AppSource {
+
+    override suspend fun scan(): List<LauncherApp> = withContext(Dispatchers.IO) {
         val pm = context.packageManager
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         val resolved = pm.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(0))
