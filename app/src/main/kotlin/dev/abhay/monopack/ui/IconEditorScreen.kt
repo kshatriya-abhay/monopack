@@ -19,9 +19,14 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -51,7 +56,6 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.abhay.monopack.glyph.MaskContrast
 import dev.abhay.monopack.model.IconEdit
@@ -128,8 +132,8 @@ fun IconEditorScreen(
                         )
                     }
                 },
-                navigationIcon = { TextButton(onClick = { close() }) { Text("Cancel") } },
-                actions = { TextButton(onClick = { onSave(draft) }) { Text("Save") } },
+                navigationIcon = { TooltipIconButton(Icons.Filled.Close, "Cancel", { close() }) },
+                actions = { TooltipIconButton(Icons.Filled.Check, "Save", { onSave(draft) }) },
             )
         },
     ) { padding ->
@@ -208,7 +212,11 @@ fun IconEditorScreen(
 
             if (edit != null) {
                 Spacer(Modifier.height(32.dp))
-                OutlinedButton(onClick = onReset, modifier = Modifier.fillMaxWidth()) { Text("Reset to default") }
+                OutlinedButton(onClick = onReset, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Symbols.Reset, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
+                    Spacer(Modifier.width(ButtonDefaults.IconSpacing))
+                    Text("Reset to default")
+                }
                 EditorHint("Follows the global icon style again, with the default colours.", Modifier.padding(top = 6.dp))
             }
             }

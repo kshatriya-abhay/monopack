@@ -40,7 +40,8 @@ object ExportJobs {
         return ExportJob.Pack(
             PackRequest(
                 name = name,
-                fileName = fileNameFor("$name · pack", now, extension = "apk"),
+                // One file per pack: re-exporting replaces it.
+                fileName = fileNameFor(name, now = null, extension = "apk"),
                 versionCode = (now.atZone(ZoneId.systemDefault()).toEpochSecond() / 60).toInt(),
                 versionName = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")),
                 apps = apps.map { app ->
@@ -89,13 +90,16 @@ object ExportJobs {
         return ExportJob.Themes(requests, preferredStyle, pairs)
     }
 
-    /** "Monopack · Primary · Dark". */
+    /** "Monopack · Blue · Dark". */
     fun titleFor(name: String, style: IconStyle) = "${name.trim().ifEmpty { "Monopack" }} · ${if (style == IconStyle.DARK) "Dark" else "Light"}"
 
-    /** "Monopack-Blue-Primary-Dark-20260927-1015.mtz" (letters and digits of each part). */
-    fun fileNameFor(title: String, now: LocalDateTime, extension: String = "mtz"): String {
+    /**
+     * "Monopack-Blue-Dark-20260927-1015.mtz" (letters and digits of each part), or without the
+     * date stamp when [now] is null ("Monopack-Blue.apk").
+     */
+    fun fileNameFor(title: String, now: LocalDateTime?, extension: String = "mtz"): String {
         val parts = title.split("·").map { part -> part.filter { it.isLetterOrDigit() } }.filter { it.isNotEmpty() }
-        val stamp = now.format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmm"))
-        return (parts.ifEmpty { listOf("Monopack") } + stamp).joinToString("-") + ".$extension"
+        val stamp = now?.format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmm"))
+        return (parts.ifEmpty { listOf("Monopack") } + listOfNotNull(stamp)).joinToString("-") + ".$extension"
     }
 }

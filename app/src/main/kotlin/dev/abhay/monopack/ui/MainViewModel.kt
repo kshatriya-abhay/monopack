@@ -33,6 +33,7 @@ import dev.abhay.monopack.palette.DefaultPalette
 import dev.abhay.monopack.palette.IconEdits
 import dev.abhay.monopack.palette.PaletteSource
 import dev.abhay.monopack.palette.Seed
+import dev.abhay.monopack.palette.SeedPresets
 import java.io.File
 import java.time.LocalDateTime
 import kotlin.math.ceil
@@ -57,7 +58,7 @@ enum class ExportTarget { ICON_PACK, HYPEROS }
 
 /** What the user chose in the export sheet. */
 data class ExportOptions(
-    /** Theme or pack name without a style suffix, e.g. "Monopack · Primary". */
+    /** Theme or pack name without a style suffix, e.g. "Monopack · Blue". */
     val name: String,
     /** HyperOS theme styles (one file each); ignored for an icon pack, which has both. */
     val styles: Set<IconStyle>,
@@ -232,6 +233,11 @@ class MainViewModel(
     }
 
     fun clearSelection() = _state.update { it.copy(selected = emptySet()) }
+
+    /** Selects every app shown (the current filter) that has an icon. */
+    fun selectAll() = _state.update { s ->
+        s.copy(selected = s.selected + s.visibleItems.filter { it.glyph != null }.map { it.app.key })
+    }
 
     /** Opens the icon editor for [key] (needs a Preview, so the committed palettes exist). */
     fun openEditor(key: String) = _state.update {
@@ -489,17 +495,17 @@ class MainViewModel(
     }
 
     companion object {
-        /** "Monopack · Blue · Primary" (the seed name only for custom colours). */
+        /**
+         * "Monopack", or "Monopack · Blue" for a preset colour. Accents and hand-picked colours
+         * aren't named, so a pack keeps its name (and package) when those change.
+         */
         fun exportName(selection: Selection): String = buildList {
             add("Monopack")
-            if (selection.source == ColorSource.CUSTOM) add(selection.seed.name)
-            add(selection.accent.displayName)
+            if (selection.source == ColorSource.CUSTOM && selection.seed in SeedPresets.AOSP) add(selection.seed.name)
         }.joinToString(" · ")
 
-        /** "Monopack · Blue · Primary · Dark". */
+        /** "Monopack · Blue · Dark". */
         fun exportTitle(selection: Selection): String = ExportJobs.titleFor(exportName(selection), selection.style)
-
-        private val Accent.displayName get() = name.lowercase().replaceFirstChar { it.uppercase() }
 
         const val GRID_ICON_DP = 58f
         /** The editor's sharp glyph is loaded at this size (the preview's centre icon is smaller). */

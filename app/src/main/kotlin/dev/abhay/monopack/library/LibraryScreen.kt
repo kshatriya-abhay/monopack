@@ -3,6 +3,7 @@ package dev.abhay.monopack.library
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,24 +20,23 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -54,7 +54,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -65,10 +64,10 @@ import dev.abhay.monopack.export.InstalledPack
 import dev.abhay.monopack.hyperos.ApplyTheme
 import dev.abhay.monopack.hyperos.ThemeToApply
 import dev.abhay.monopack.model.IconStyle
-import dev.abhay.monopack.render.IconShape
+import dev.abhay.monopack.newapps.NewApps
 import dev.abhay.monopack.render.LocalIconShape
-import java.text.DateFormat
-import java.util.Date
+import dev.abhay.monopack.ui.Symbols
+import dev.abhay.monopack.ui.TooltipIconButton
 
 /**
  * The home screen: themes and icon packs in the library folder, newest first. Tap a theme to apply
@@ -85,14 +84,13 @@ fun LibraryScreen(
     onRemoveMissing: (LibraryItem) -> Unit,
     onApplied: (LibraryItem) -> Unit,
     onOpenFolder: () -> Boolean,
-    onChangeFolder: () -> Unit,
+    onSettings: () -> Unit,
     applyTheme: ApplyTheme = ApplyTheme {},
-    onIconShape: (IconShape) -> Unit = {},
+    onDismissNewApps: () -> Unit = {},
+    onSelectAll: () -> Unit = {},
 ) {
     val context = LocalContext.current
     var confirmDelete by remember { mutableStateOf(false) }
-    var menu by remember { mutableStateOf(false) }
-    var choosingShape by remember { mutableStateOf(false) }
 
     fun apply(item: LibraryItem) {
         val path = state.pathFor(item)
@@ -117,41 +115,21 @@ fun LibraryScreen(
             if (state.selecting) {
                 TopAppBar(
                     title = { Text("${state.selected.size} selected") },
-                    navigationIcon = { TextButton(onClick = onClearSelection) { Text("Cancel") } },
-                    actions = { TextButton(onClick = { confirmDelete = true }) { Text("Delete") } },
+                    navigationIcon = { TooltipIconButton(Icons.Filled.Close, "Cancel", onClearSelection) },
+                    actions = {
+                        TooltipIconButton(Symbols.SelectAll, "Select all", onSelectAll)
+                        TooltipIconButton(Icons.Filled.Delete, "Delete", { confirmDelete = true })
+                    },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
                 )
             } else {
                 TopAppBar(
-                    title = {
-                        Column {
-                            Text("Monopack")
-                            if (state.items.isNotEmpty()) {
-                                Text(
-                                    "${state.items.size} ${if (state.items.size == 1) "item" else "items"}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
-                    },
+                    title = { Text("Monopack") },
                     actions = {
                         val lastTheme = state.lastTheme
                         val reapply = lastTheme?.let { theme -> state.items.firstOrNull { !it.missing && state.pathFor(it) == theme.absolutePath } }
                         if (reapply != null) TextButton(onClick = { apply(reapply) }) { Text("Reapply") }
-                        Box {
-                            IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "More") }
-                            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                                DropdownMenuItem(text = { Text("Icon shape") }, onClick = {
-                                    menu = false
-                                    choosingShape = true
-                                })
-                                DropdownMenuItem(text = { Text("Change folder") }, onClick = {
-                                    menu = false
-                                    onChangeFolder()
-                                })
-                            }
-                        }
+                        TooltipIconButton(Icons.Filled.Settings, "Settings", onSettings)
                     },
                 )
             }
@@ -169,6 +147,9 @@ fun LibraryScreen(
         when {
             state.items.isEmpty() -> EmptyLibrary(padding, state.error)
             else -> LazyColumn(contentPadding = PaddingValues(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 88.dp)) {
+                state.newApps?.let { found ->
+                    item(key = "new-apps") { NewAppsBanner(found, onUpdate = onCreate, onDismiss = onDismissNewApps) }
+                }
                 state.error?.let { error -> item { Text(error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp)) } }
                 items(state.items, key = { it.fileName }) { item ->
                     LibraryRow(
@@ -186,13 +167,6 @@ fun LibraryScreen(
         }
     }
 
-    if (choosingShape) {
-        IconShapeDialog(current = state.iconShape, onPick = {
-            choosingShape = false
-            onIconShape(it)
-        }, onDismiss = { choosingShape = false })
-    }
-
     if (confirmDelete) {
         val count = state.selected.size
         AlertDialog(
@@ -207,6 +181,32 @@ fun LibraryScreen(
             },
             dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
         )
+    }
+}
+
+/** New apps the current icon pack doesn't cover, with a shortcut to update it. */
+@Composable
+private fun NewAppsBanner(found: NewAppsFound, onUpdate: () -> Unit, onDismiss: () -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)) {
+            val count = found.apps.size
+            Text(
+                if (count == 1) "${found.apps[0].label} has no themed icon" else "$count new apps have no themed icon",
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "${NewApps.names(found.apps)} ${if (count == 1) "isn't" else "aren't"} in ${found.packLabel}.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Row(Modifier.align(Alignment.End)) {
+                TextButton(onClick = onDismiss) { Text("Dismiss") }
+                TextButton(onClick = onUpdate) { Text("Update pack") }
+            }
+        }
     }
 }
 
@@ -261,34 +261,53 @@ private fun LibraryRow(
         Column(Modifier.weight(1f).alpha(if (item.missing) 0.38f else 1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(item.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                Spacer(Modifier.width(8.dp))
-                AssistChip(
-                    onClick = onClick,
-                    label = { Text(if (item.kind == ExportKind.THEME) "Theme" else "Icon pack", style = MaterialTheme.typography.labelSmall) },
-                    modifier = Modifier.height(24.dp),
-                )
-            }
-            val details = buildList {
-                item.iconCount?.let { add("$it icons") }
-                add(DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(item.createdAt)))
-                if (applied) add("Applied")
-                when (installed) {
-                    InstalledPack.SAME_SIGNER -> add("Installed")
-                    InstalledPack.OTHER_SIGNER -> add("Another version installed")
-                    else -> Unit
+                // Icon packs are the default; HyperOS themes are marked.
+                if (item.kind == ExportKind.THEME) {
+                    Spacer(Modifier.width(8.dp))
+                    Pill("Theme")
                 }
             }
-            Text(
-                if (item.missing) "File missing" else details.joinToString(" · "),
-                style = MaterialTheme.typography.bodySmall,
-                color = if (item.missing) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val text = if (item.missing) "File missing" else item.iconCount?.let { "$it icons" }
+                if (text != null) {
+                    Text(
+                        text,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (item.missing) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                }
+                val status = when {
+                    item.missing -> null
+                    applied -> "Applied"
+                    installed == InstalledPack.SAME_SIGNER -> "Installed"
+                    installed == InstalledPack.OTHER_SIGNER -> "Another version installed"
+                    else -> null
+                }
+                if (status != null) {
+                    if (text != null) Spacer(Modifier.width(8.dp))
+                    Pill(status)
+                }
+            }
         }
         if (item.missing) {
             IconButton(onClick = onRemove) { Icon(Icons.Filled.Delete, contentDescription = "Remove ${item.title}") }
         }
+    }
+}
+
+/** A small outlined label (not clickable), like a chip. */
+@Composable
+private fun Pill(text: String) {
+    Box(
+        Modifier
+            .height(24.dp)
+            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp))
+            .padding(horizontal = 8.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, style = MaterialTheme.typography.labelSmall, maxLines = 1)
     }
 }
 
@@ -306,46 +325,11 @@ private fun Thumbnail(item: LibraryItem) {
     Box(
         Modifier
             .size(56.dp)
-            .clip(LocalIconShape.current)
+            .clip(item.shape?.shape ?: LocalIconShape.current)
             .background(plate)
             .semantics { contentDescription = if (item.missing) "${item.title}, file missing" else item.title },
         contentAlignment = Alignment.Center,
     ) {
         Icon(painterResource(R.drawable.ic_launcher_monochrome), contentDescription = null, tint = glyph, modifier = Modifier.requiredSize(84.dp))
     }
-}
-
-/** Picks the preview icon shape, showing each shape on a sample plate. */
-@Composable
-private fun IconShapeDialog(current: IconShape, onPick: (IconShape) -> Unit, onDismiss: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Icon shape") },
-        text = {
-            Column {
-                Text(
-                    "Match your launcher's icon shape, so previews look like your home screen. Exports aren't affected.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(8.dp))
-                IconShape.entries.forEach { shape ->
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .selectable(selected = shape == current, role = Role.RadioButton, onClick = { onPick(shape) })
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(selected = shape == current, onClick = null)
-                        Spacer(Modifier.width(12.dp))
-                        Box(Modifier.size(32.dp).clip(shape.shape).background(MaterialTheme.colorScheme.primaryContainer))
-                        Spacer(Modifier.width(12.dp))
-                        Text(shape.label)
-                    }
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
-    )
 }

@@ -19,14 +19,23 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TooltipAnchorPosition
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -39,6 +48,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
@@ -49,6 +59,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
@@ -61,6 +73,7 @@ import dev.abhay.monopack.model.IconPalette
 import dev.abhay.monopack.model.IconStyle
 import dev.abhay.monopack.model.Selection
 import dev.abhay.monopack.palette.Seed
+import dev.abhay.monopack.render.IconShape
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
@@ -77,6 +90,9 @@ fun ControlPanel(
     onSourceChange: (ColorSource) -> Unit,
     onSeedChange: (Seed) -> Unit,
     onPreview: () -> Unit,
+    /** The icon shape previews use (and the pack is recorded with); launchers apply their own mask. */
+    iconShape: IconShape = IconShape.DEFAULT,
+    onIconShape: (IconShape) -> Unit = {},
     /** Incremented by the screen to request a collapse (e.g. when the grid is scrolled). */
     collapseRequests: Int = 0,
     /** Incremented by the screen to request an expand (e.g. from the default-palette banner). */
@@ -227,6 +243,10 @@ fun ControlPanel(
                             ) { Text(accent.label) }
                         }
                     }
+                    Spacer(Modifier.height(12.dp))
+
+                    SectionLabel("Icon shape")
+                    ShapeRow(selected = iconShape, onSelect = onIconShape)
                     Spacer(Modifier.height(16.dp))
 
                     // Preview: at the bottom of the controls, so it collapses with them.
@@ -363,3 +383,39 @@ internal val Accent.label
         Accent.SECONDARY -> "Secondary"
         Accent.TERTIARY -> "Tertiary"
     }
+
+/**
+ * The icon shapes as blank tiles (name in a tooltip). Match your launcher's shape, so previews look
+ * like your home screen; applies right away, no Preview needed.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ShapeRow(selected: IconShape, onSelect: (IconShape) -> Unit) {
+    Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.SpaceBetween) {
+        IconShape.entries.forEach { shape ->
+            val isSelected = shape == selected
+            TooltipBox(
+                positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+                tooltip = { PlainTooltip { Text(shape.label) } },
+                state = rememberTooltipState(),
+            ) {
+                Box(
+                    Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (isSelected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+                        .selectable(selected = isSelected, role = Role.RadioButton, onClick = { onSelect(shape) })
+                        .semantics { contentDescription = shape.label },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        Modifier
+                            .size(32.dp)
+                            .clip(shape.shape)
+                            .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)),
+                    )
+                }
+            }
+        }
+    }
+}

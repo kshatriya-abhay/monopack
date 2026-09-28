@@ -19,7 +19,7 @@ import androidx.compose.ui.unit.LayoutDirection
  * preview can match the user's launcher; HyperOS themes always use [SQUIRCLE].
  */
 enum class IconShape(val label: String) {
-    SQUIRCLE("Squircle (HyperOS)"),
+    SQUIRCLE("Squircle"),
     CIRCLE("Circle"),
     ROUNDED_SQUARE("Rounded square"),
     SQUARE("Square"),

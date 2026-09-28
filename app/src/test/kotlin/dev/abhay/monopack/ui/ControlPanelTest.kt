@@ -15,17 +15,20 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.unit.dp
+import com.google.common.truth.Truth.assertThat
 import dev.abhay.monopack.model.Accent
 import dev.abhay.monopack.model.ColorSource
 import dev.abhay.monopack.model.IconStyle
 import dev.abhay.monopack.model.Selection
 import dev.abhay.monopack.palette.SeedPresets
+import dev.abhay.monopack.render.IconShape
 import dev.abhay.monopack.ui.theme.MonopackTheme
 import java.io.File
 import org.junit.Rule
@@ -72,6 +75,21 @@ class ControlPanelTest {
     }
 
     @Test
+    fun theIconShapeIsPickedFromShapeTiles() {
+        var shape: IconShape? = null
+        compose.setContent {
+            MonopackTheme {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+                    ControlPanel(state, {}, {}, {}, {}, {}, iconShape = IconShape.SQUIRCLE, onIconShape = { shape = it })
+                }
+            }
+        }
+        compose.onNodeWithText("Icon shape").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Circle").performClick()
+        assertThat(shape).isEqualTo(IconShape.CIRCLE)
+    }
+
+    @Test
     fun draggingTheHeaderCollapsesAndExpands() {
         compose.setContent {
             MonopackTheme {
@@ -80,12 +98,12 @@ class ControlPanelTest {
                 }
             }
         }
-        compose.onNodeWithText("Not previewed yet").performTouchInput { swipe(center, center + Offset(0f, 1200f), durationMillis = 400) }
+        compose.onNodeWithText("Not previewed yet").performTouchInput { swipe(center, center + Offset(0f, 1800f), durationMillis = 400) }
         compose.waitForIdle()
         compose.onNodeWithText("Preview mode").assertDoesNotExist()
         snapshot("dragged-collapsed")
 
-        compose.onNodeWithText("Not previewed yet").performTouchInput { swipe(center, center - Offset(0f, 1200f), durationMillis = 400) }
+        compose.onNodeWithText("Not previewed yet").performTouchInput { swipe(center, center - Offset(0f, 1800f), durationMillis = 400) }
         compose.waitForIdle()
         compose.onNodeWithText("Preview mode").assertIsDisplayed()
         snapshot("dragged-expanded")

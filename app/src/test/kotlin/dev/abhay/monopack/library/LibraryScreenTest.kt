@@ -16,6 +16,7 @@ import androidx.compose.ui.test.longClick
 import com.google.common.truth.Truth.assertThat
 import dev.abhay.monopack.export.ExportKind
 import dev.abhay.monopack.model.IconStyle
+import dev.abhay.monopack.newapps.InstalledApp
 import dev.abhay.monopack.ui.theme.MonopackTheme
 import java.io.File
 import org.junit.Rule
@@ -53,7 +54,7 @@ class LibraryScreenTest {
                 onRemoveMissing = { removed = it },
                 onApplied = {},
                 onOpenFolder = { true },
-                onChangeFolder = {},
+                onSettings = {},
             )
         }
     }
@@ -61,10 +62,42 @@ class LibraryScreenTest {
     private val base = LibraryState(loading = false, tree = "t", hasAccess = true, folderLabel = "Download/Monopack")
 
     @Test
+    fun newAppsBannerLeadsToCreate() {
+        var created = false
+        var dismissed = false
+        compose.setContent {
+            MonopackTheme {
+                LibraryScreen(
+                    state = base.copy(
+                        items = listOf(pack),
+                        newApps = NewAppsFound("My pack", listOf(InstalledApp("s/s.Main", "Swiggy", 2), InstalledApp("z/z.Main", "Zepto", 3))),
+                    ),
+                    onCreate = { created = true },
+                    onToggle = {},
+                    onClearSelection = {},
+                    onDeleteSelected = {},
+                    onRemoveMissing = {},
+                    onApplied = {},
+                    onOpenFolder = { true },
+                    onSettings = {},
+                    onDismissNewApps = { dismissed = true },
+                )
+            }
+        }
+        compose.onNodeWithText("2 new apps have no themed icon").assertIsDisplayed()
+        compose.onNodeWithText("Swiggy and Zepto aren't in My pack.").assertIsDisplayed()
+        snapshot("library-new-apps")
+        compose.onNodeWithText("Update pack").performClick()
+        assertThat(created).isTrue()
+        compose.onNodeWithText("Dismiss").performClick()
+        assertThat(dismissed).isTrue()
+    }
+
+    @Test
     fun missingFilesAreMarkedAndCanBeRemoved() {
         show(base.copy(items = listOf(theme, pack, missing)))
         compose.onNodeWithText("File missing").assertIsDisplayed()
-        compose.onNodeWithText("3 items").assertIsDisplayed()
+        compose.onAllNodesWithText("Theme")[0].assertIsDisplayed()
         snapshot("library")
         compose.onNodeWithContentDescription("Remove Monopack · Blue · Dark").performClick()
         assertThat(removed).isEqualTo(missing)
@@ -74,7 +107,8 @@ class LibraryScreenTest {
     fun longPressSelectsAndDeleteAsksFirst() {
         show(base.copy(items = listOf(theme, pack), selected = setOf("t.mtz")))
         compose.onNodeWithText("1 selected").assertIsDisplayed()
-        compose.onNodeWithText("Delete").performClick()
+        snapshot("library-selecting")
+        compose.onNodeWithContentDescription("Delete").performClick()
         compose.onNodeWithText("Its file is deleted too.").assertIsDisplayed()
         assertThat(deleted).isFalse()
         compose.onAllNodesWithText("Delete").onLast().performClick()

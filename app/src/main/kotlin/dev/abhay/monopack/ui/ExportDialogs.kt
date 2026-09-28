@@ -126,11 +126,11 @@ fun ExportDialogs(
                     },
                 )
                 if (pack) {
-                    val hint = remember { LauncherHints.forLauncher(LauncherHints.defaultLauncher(context)) }
+                    val launcher = remember { LauncherHints.defaultLauncher(context) }
                     Spacer(Modifier.height(8.dp))
-                    Text(hint, style = MaterialTheme.typography.bodyMedium)
+                    Text(LauncherHints.forLauncher(launcher), style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(4.dp))
-                    Hint("After updating a pack, restart your launcher (or pick the pack again) to load the new icons.")
+                    Hint(LauncherHints.afterUpdate(launcher))
                 }
                 state.files.forEach { file ->
                     Spacer(Modifier.height(12.dp))

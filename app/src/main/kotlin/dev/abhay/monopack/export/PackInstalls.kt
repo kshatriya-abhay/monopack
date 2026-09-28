@@ -39,6 +39,16 @@ object LauncherHints {
 
     fun forLauncher(packageName: String?): String = HINTS[packageName] ?: GENERIC
 
+    /**
+     * How to see an updated pack's new icons. Lawnchair loads a pack once per process and keeps it
+     * (its `IconPackProvider` never drops a loaded pack), so picking the pack again doesn't help.
+     */
+    fun afterUpdate(packageName: String?): String = when (packageName) {
+        "app.lawnchair", "app.lawnchair.play" ->
+            "Updated a pack? Lawnchair keeps showing the old icons until it restarts: in Lawnchair's settings, tap ⋮ → Restart Lawnchair."
+        else -> "Updated a pack? Some launchers keep the old icons until they restart."
+    }
+
     /** The default launcher's package, or null. */
     fun defaultLauncher(context: Context): String? =
         context.packageManager.resolveActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), PackageManager.MATCH_DEFAULT_ONLY)

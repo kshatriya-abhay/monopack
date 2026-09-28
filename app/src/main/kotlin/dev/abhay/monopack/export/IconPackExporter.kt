@@ -41,7 +41,7 @@ data class PackApp(
 )
 
 data class PackRequest(
-    /** The pack's label in launchers, e.g. "Monopack · Primary". */
+    /** The pack's label in launchers, e.g. "Monopack · Blue". */
     val name: String,
     val fileName: String,
     val versionCode: Int,

@@ -194,7 +194,7 @@ fun ExportOptionsSheet(
     }
 }
 
-/** The icon pack's suggested label, e.g. "Monopack · Primary" or "Monopack · Primary · Dark". */
+/** The icon pack's suggested label, e.g. "Monopack" or "Monopack · Blue · Dark". */
 private fun suggestedPackName(name: String, style: PackStyleChoice) = style.suffix?.let { "$name · $it" } ?: name
 
 @Composable

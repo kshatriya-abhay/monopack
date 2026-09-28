@@ -1,5 +1,6 @@
 package dev.abhay.monopack.library
 
+import android.util.Log
 import dev.abhay.monopack.export.DownloadsSaver
 import dev.abhay.monopack.export.ExportSaver
 import dev.abhay.monopack.export.SavedExport
@@ -14,9 +15,10 @@ class FolderSaver(
     private val folder: LibraryFolder,
     private val fallback: DownloadsSaver,
 ) : ExportSaver {
-    override suspend fun save(file: File): SavedExport {
-        val tree = store.loadTree()?.takeIf { folder.hasAccess(it) } ?: return fallback.save(file)
+    override suspend fun save(file: File, packageName: String?): SavedExport {
+        val tree = store.loadTree()?.takeIf { folder.hasAccess(it) } ?: return fallback.save(file, packageName)
         val saved = folder.write(tree, file, file.name, DownloadsSaver.mimeTypeFor(file.name))
+        if (packageName != null) removeOlderExports(tree, packageName, keep = saved.name)
         return SavedExport(
             uri = saved.documentUri,
             displayPath = "${folder.label(tree)}/${saved.name}",
@@ -26,4 +28,14 @@ class FolderSaver(
     }
 
     override suspend fun copyTo(file: File, uri: String) = fallback.copyTo(file, uri)
+
+    /** Deletes the pack's other recorded files (older, date-stamped exports) and their records. */
+    private suspend fun removeOlderExports(tree: String, packageName: String, keep: String) {
+        runCatching {
+            val older = store.loadRecords().values.filter { it.packageName == packageName && it.fileName != keep }.map { it.fileName }.toSet()
+            if (older.isEmpty()) return
+            folder.list(tree).filter { it.name in older }.forEach { folder.delete(it.documentUri) }
+            store.removeRecords(older)
+        }.onFailure { Log.w("Monopack", "Couldn't remove older exports of $packageName", it) }
+    }
 }

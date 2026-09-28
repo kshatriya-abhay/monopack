@@ -9,6 +9,7 @@ import dev.abhay.monopack.library.ExportRecord
 import dev.abhay.monopack.library.LibraryStore
 import dev.abhay.monopack.model.IconPalette
 import dev.abhay.monopack.model.IconStyle
+import dev.abhay.monopack.render.IconShape
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -27,7 +28,7 @@ data class ExportedFile(
     val kind: ExportKind,
     /** The theme's icon style; null for an icon pack (it has both). */
     val style: IconStyle?,
-    /** Theme or pack title, e.g. "Monopack · Primary · Light". */
+    /** Theme or pack title, e.g. "Monopack · Blue · Light". */
     val title: String,
     val fileName: String,
     /** Human-readable location, e.g. "Download/Monopack/…mtz". */
@@ -150,7 +151,13 @@ class ExportRunner(
             }
             val saved = saver.save(file)
             val pair = work.pairs[style]
-            record(ExportRecord(saved.name, ExportKind.THEME, request.title, style, System.currentTimeMillis(), request.apps.size, pair?.background, pair?.foreground))
+            // HyperOS always uses its own squircle.
+            record(
+                ExportRecord(
+                    saved.name, ExportKind.THEME, request.title, style, System.currentTimeMillis(), request.apps.size,
+                    pair?.background, pair?.foreground, shape = IconShape.SQUIRCLE.name,
+                ),
+            )
             ExportedFile(ExportKind.THEME, style, request.title, saved.name, saved.displayPath, saved.uri, saved.absolutePath, file.path, request.apps.size)
         }
         // Until one is applied, Reapply uses the new export (the preferred style's file for Both).
@@ -167,11 +174,12 @@ class ExportRunner(
             onProgress = { done, total -> _state.value = ExportState.Running(work.kind, done, total) },
             onSigning = { _state.update { (it as? ExportState.Running)?.copy(signing = true) ?: it } },
         )
-        val saved = saver.save(file)
+        val saved = saver.save(file, request.packageName)
         record(
             ExportRecord(
                 saved.name, ExportKind.ICON_PACK, request.name, request.style, System.currentTimeMillis(), request.apps.size,
                 request.iconPalette.background, request.iconPalette.foreground, request.packageName, request.versionCode,
+                shape = runCatching { library.loadIconShape() }.getOrNull() ?: IconShape.DEFAULT.name,
             ),
         )
         val exported = ExportedFile(ExportKind.ICON_PACK, request.style, request.name, saved.name, saved.displayPath, saved.uri, saved.absolutePath, file.path, request.apps.size)

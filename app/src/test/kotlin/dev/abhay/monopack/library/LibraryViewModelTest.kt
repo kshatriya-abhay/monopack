@@ -9,6 +9,9 @@ import dev.abhay.monopack.export.InstalledPack
 import dev.abhay.monopack.iconpack.PackNaming
 import dev.abhay.monopack.model.IconEdit
 import dev.abhay.monopack.model.IconStyle
+import dev.abhay.monopack.newapps.InstalledApp
+import dev.abhay.monopack.newapps.NewAppStore
+import dev.abhay.monopack.newapps.WatchablePack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -128,6 +131,18 @@ class LibraryViewModelTest {
     }
 
     @Test
+    fun `select all selects every item, missing ones too`() = runTest(dispatcher) {
+        store.tree = tree
+        folder.granted += tree
+        folder.add("a.mtz")
+        store.records = mapOf("gone.apk" to ExportRecord("gone.apk", ExportKind.ICON_PACK, "Gone", null, 1, 1))
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.selectAll()
+        assertThat(vm.state.value.selected).containsExactly("a.mtz", "gone.apk")
+    }
+
+    @Test
     fun `don't show again is remembered`() = runTest(dispatcher) {
         val vm = viewModel()
         advanceUntilIdle()
@@ -136,6 +151,57 @@ class LibraryViewModelTest {
         advanceUntilIdle()
         assertThat(store.hintDismissed).isTrue()
         assertThat(viewModel().also { advanceUntilIdle() }.state.value.applyHintDismissed).isTrue()
+    }
+
+    @Test
+    fun `the new-app notification setting is saved and schedules the check`() = runTest(dispatcher) {
+        val newApps = object : NewAppStore {
+            var enabled = false
+            override suspend fun loadEnabled() = enabled
+            override suspend fun saveEnabled(enabled: Boolean) {
+                this.enabled = enabled
+            }
+            override suspend fun loadNotified() = emptySet<String>()
+            override suspend fun saveNotified(components: Set<String>) = Unit
+        }
+        val scheduled = mutableListOf<Boolean>()
+        val vm = LibraryViewModel(store, folder, selections, { installed }, newApps = newApps, scheduleNewApps = { scheduled += it })
+        advanceUntilIdle()
+        assertThat(vm.state.value.newAppAlerts).isFalse()
+        vm.setNewAppAlerts(true)
+        advanceUntilIdle()
+        assertThat(newApps.enabled).isTrue()
+        assertThat(scheduled).containsExactly(true)
+        vm.setNewAppAlerts(false)
+        advanceUntilIdle()
+        assertThat(scheduled).containsExactly(true, false).inOrder()
+    }
+
+    @Test
+    fun `new apps show on open until dismissed, and return when others are installed`() = runTest(dispatcher) {
+        var found = NewAppsFound("My pack", listOf(InstalledApp("s/s.Main", "Swiggy", 2)))
+        val vm = LibraryViewModel(store, folder, selections, { installed }, findNewApps = { found })
+        advanceUntilIdle()
+        assertThat(vm.state.value.newApps).isEqualTo(found)
+        vm.dismissNewApps()
+        vm.refresh()
+        advanceUntilIdle()
+        assertThat(vm.state.value.newApps).isNull()
+        found = found.copy(apps = found.apps + InstalledApp("z/z.Main", "Zepto", 3))
+        vm.refresh()
+        advanceUntilIdle()
+        assertThat(vm.state.value.newApps).isEqualTo(found)
+    }
+
+    @Test
+    fun `the watched pack is the picked one, or the only one installed`() {
+        val one = WatchablePack("p.one", "Monopack")
+        val two = WatchablePack("p.two", "Monopack · Dark")
+        assertThat(LibraryState(packs = listOf(one)).effectiveWatchedPack).isEqualTo(one)
+        assertThat(LibraryState(packs = listOf(one, two)).effectiveWatchedPack).isNull()
+        assertThat(LibraryState(packs = listOf(one, two), watchedPack = "p.two").effectiveWatchedPack).isEqualTo(two)
+        // Picked, then uninstalled: falls back like nothing was picked.
+        assertThat(LibraryState(packs = listOf(one), watchedPack = "p.gone").effectiveWatchedPack).isEqualTo(one)
     }
 
     @Test

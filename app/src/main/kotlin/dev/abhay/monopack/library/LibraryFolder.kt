@@ -28,7 +28,7 @@ interface LibraryFolder {
 
     suspend fun list(treeUri: String): List<FolderFile>
 
-    /** Copies [file] into the folder as [name]; returns the new document. */
+    /** Copies [file] into the folder as [name], replacing a file of that name; returns the document. */
     suspend fun write(treeUri: String, file: File, name: String, mimeType: String): FolderFile
 
     suspend fun delete(documentUri: String): Boolean
@@ -75,6 +75,12 @@ class SafLibraryFolder(private val context: Context) : LibraryFolder {
 
     override suspend fun write(treeUri: String, file: File, name: String, mimeType: String): FolderFile = withContext(Dispatchers.IO) {
         val tree = treeUri.toUri()
+        val existing = list(treeUri).firstOrNull { it.name == name }?.documentUri?.toUri()
+        if (existing != null) {
+            // Truncate and rewrite in place (the document keeps its URI).
+            resolver.openOutputStream(existing, "wt")?.use { out -> file.inputStream().use { it.copyTo(out) } } ?: error("Couldn't write $name")
+            return@withContext FolderFile(name, existing.toString(), DocumentsContract.getDocumentId(existing), file.length(), System.currentTimeMillis())
+        }
         val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
         val created: Uri = DocumentsContract.createDocument(resolver, parent, mimeType, name) ?: error("Couldn't create $name")
         try {

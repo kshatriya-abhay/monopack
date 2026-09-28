@@ -25,8 +25,8 @@ class FakeLibraryStore(var tree: String? = null) : LibraryStore {
 
     override suspend fun loadApplyHintDismissed() = hintDismissed
 
-    override suspend fun saveApplyHintDismissed() {
-        hintDismissed = true
+    override suspend fun saveApplyHintDismissed(dismissed: Boolean) {
+        hintDismissed = dismissed
     }
 
     var iconShape: String? = null
@@ -60,7 +60,10 @@ class FakeLibraryFolder : LibraryFolder {
 
     override suspend fun list(treeUri: String) = files.toList()
 
-    override suspend fun write(treeUri: String, file: File, name: String, mimeType: String) = add(name)
+    override suspend fun write(treeUri: String, file: File, name: String, mimeType: String): FolderFile {
+        files.removeIf { it.name == name }
+        return add(name)
+    }
 
     override suspend fun delete(documentUri: String): Boolean {
         deleted += documentUri

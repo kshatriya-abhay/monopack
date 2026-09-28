@@ -15,14 +15,26 @@ import dev.abhay.monopack.export.PackSigner
 import dev.abhay.monopack.library.DataStoreLibraryStore
 import dev.abhay.monopack.library.FolderSaver
 import dev.abhay.monopack.library.SafLibraryFolder
+import dev.abhay.monopack.newapps.DataStoreNewAppStore
+import dev.abhay.monopack.newapps.NewAppCheck
+import dev.abhay.monopack.newapps.NewAppJob
 import dev.abhay.monopack.palette.PaletteProvider
 import dev.abhay.monopack.ui.DrawerItemLoader
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class MonopackApp : Application() {
     val container by lazy { AppContainer(this) }
+
+    override fun onCreate() {
+        super.onCreate()
+        // Re-sync the new-app check with its setting (e.g. after an update cleared scheduled jobs).
+        CoroutineScope(Dispatchers.IO).launch {
+            runCatching { NewAppJob.sync(this@MonopackApp, container.newAppStore.loadEnabled()) }
+        }
+    }
 }
 
 /** Manual DI: the app is small enough that a single container is all we need. */
@@ -38,6 +50,8 @@ class AppContainer(context: Context) {
     val exportSaver = FolderSaver(libraryStore, libraryFolder, DownloadsSaver(context))
     private val packSigner = PackSigner()
     val packInstalls = AndroidPackInstalls(context, packSigner)
+    val newAppStore = DataStoreNewAppStore(context)
+    val newAppCheck = NewAppCheck(context, newAppStore, packInstalls)
 
     /** Exports run in the app's scope, kept alive by [ExportService] while they run. */
     val exportRunner = ExportRunner(

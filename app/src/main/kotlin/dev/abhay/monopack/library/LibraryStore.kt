@@ -28,7 +28,7 @@ interface LibraryStore {
     /** The "pick the theme file" explanation was turned off ("Don't show again"). */
     suspend fun loadApplyHintDismissed(): Boolean
 
-    suspend fun saveApplyHintDismissed()
+    suspend fun saveApplyHintDismissed(dismissed: Boolean = true)
 
     /** The preview icon shape (an `IconShape` name), or null for the default. */
     suspend fun loadIconShape(): String?
@@ -66,8 +66,8 @@ class DataStoreLibraryStore(context: Context) : LibraryStore {
 
     override suspend fun loadApplyHintDismissed(): Boolean = store.data.first()[APPLY_HINT] ?: false
 
-    override suspend fun saveApplyHintDismissed() {
-        store.edit { it[APPLY_HINT] = true }
+    override suspend fun saveApplyHintDismissed(dismissed: Boolean) {
+        store.edit { it[APPLY_HINT] = dismissed }
     }
 
     override suspend fun loadIconShape(): String? = store.data.first()[ICON_SHAPE]
@@ -99,7 +99,8 @@ internal object RecordsJson {
                     .put("plate", r.plate)
                     .put("glyph", r.glyph)
                     .put("package", r.packageName)
-                    .put("version", r.versionCode),
+                    .put("version", r.versionCode)
+                    .put("shape", r.shape),
             )
         }
     }.toString()
@@ -123,6 +124,7 @@ internal object RecordsJson {
                         glyph = if (e.has("glyph")) e.optInt("glyph") else null,
                         packageName = e.optString("package").takeIf { it.isNotEmpty() },
                         versionCode = if (e.has("version")) e.optInt("version") else null,
+                        shape = e.optString("shape").takeIf { it.isNotEmpty() },
                     ),
                 )
             }

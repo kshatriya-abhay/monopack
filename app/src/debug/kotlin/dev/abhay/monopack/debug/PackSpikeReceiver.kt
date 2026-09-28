@@ -30,11 +30,25 @@ import kotlin.concurrent.thread
  * Android Keystore key on a real device. Output: `files/pack-spike/spike.apk` in external storage.
  *
  * adb shell am broadcast -n dev.abhay.monopack/.debug.PackSpikeReceiver [--es name "Pack name"]
+ * `--ez newApps true` logs what the new-app check would notify about (nothing posted or saved).
  */
 class PackSpikeReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val pending = goAsync()
         val name = intent.getStringExtra("name") ?: "Monopack · Spike"
+        if (intent.getBooleanExtra("newApps", false)) {
+            thread {
+                try {
+                    val found = kotlinx.coroutines.runBlocking { context.appContainer.newAppCheck.find() }
+                    Log.i("HyperProbe", "newApps pack=${found?.pack?.label} updated=${found?.pack?.updatedAt} covers=${found?.pack?.components?.size} fresh=${found?.fresh}")
+                } catch (e: Exception) {
+                    Log.e("HyperProbe", "newApps failed", e)
+                } finally {
+                    pending.finish()
+                }
+            }
+            return
+        }
         intent.getStringExtra("contrastProbe")?.let { pkg ->
             // The editor's path: load the glyph, apply contrast 100, and log the opacity levels.
             thread {

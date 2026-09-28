@@ -22,16 +22,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -54,6 +54,7 @@ import dev.abhay.monopack.hyperos.ApplyTheme
 import dev.abhay.monopack.library.PackNameWarning
 import dev.abhay.monopack.model.ColorSource
 import dev.abhay.monopack.model.GlyphSource
+import dev.abhay.monopack.render.IconShape
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,6 +68,8 @@ fun MainScreen(
     applyTheme: ApplyTheme = ApplyTheme {},
     /** Same-name warning for icon packs, from the library. */
     packNameWarning: (String) -> PackNameWarning? = { null },
+    iconShape: IconShape = IconShape.DEFAULT,
+    onIconShape: (IconShape) -> Unit = {},
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -88,12 +91,15 @@ fun MainScreen(
                     if (state.selecting) {
                         TopAppBar(
                             title = { Text("${state.selected.size} selected") },
-                            navigationIcon = { TextButton(onClick = viewModel::clearSelection) { Text("Cancel") } },
+                            navigationIcon = {
+                                TooltipIconButton(Icons.Filled.Close, "Cancel", viewModel::clearSelection)
+                            },
                             actions = {
+                                TooltipIconButton(Symbols.SelectAll, "Select all", viewModel::selectAll)
                                 if (state.selectionHasEdits) {
-                                    TextButton(onClick = viewModel::resetSelectedEdits) { Text("Reset") }
+                                    TooltipIconButton(Symbols.Reset, "Reset", viewModel::resetSelectedEdits)
                                 }
-                                TextButton(onClick = viewModel::editSelection, enabled = state.canEditSelection) { Text("Edit icon") }
+                                TooltipIconButton(Icons.Filled.Edit, "Edit icon", viewModel::editSelection, enabled = state.canEditSelection)
                             },
                             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
                         )
@@ -101,13 +107,15 @@ fun MainScreen(
                         TopAppBar(
                             title = { Text("Create") },
                             navigationIcon = {
-                                IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                                TooltipIconButton(Icons.AutoMirrored.Filled.ArrowBack, "Back", onBack)
                             },
                             actions = {
-                                TextButton(onClick = viewModel::refresh, enabled = state.iconsReady) { Text("Refresh") }
-                                TextButton(onClick = { exportOptions = viewModel.defaultExportOptions() }, enabled = state.exportEnabled) {
-                                    Text("Export")
-                                }
+                                TooltipIconButton(Icons.Filled.Refresh, "Refresh", viewModel::refresh, enabled = state.iconsReady)
+                                Button(
+                                    onClick = { exportOptions = viewModel.defaultExportOptions() },
+                                    enabled = state.exportEnabled,
+                                    modifier = Modifier.padding(end = 8.dp),
+                                ) { Text("Export") }
                             },
                         )
                     }
@@ -127,6 +135,8 @@ fun MainScreen(
                     onSourceChange = viewModel::setColorSource,
                     onSeedChange = viewModel::setSeed,
                     onPreview = viewModel::preview,
+                    iconShape = iconShape,
+                    onIconShape = onIconShape,
                     collapseRequests = collapseRequests,
                     expandRequests = expandRequests,
                 )

@@ -19,8 +19,12 @@ data class SavedExport(
 )
 
 interface ExportSaver {
-    /** Copies the finished file to shared storage. */
-    suspend fun save(file: File): SavedExport
+    /**
+     * Copies the finished file to shared storage, replacing a file of the same name. For an icon
+     * pack, [packageName] also removes that pack's older exports (files named before packs got
+     * one fixed file name).
+     */
+    suspend fun save(file: File, packageName: String? = null): SavedExport
 
     /** Copies the finished file to a user-chosen document (Storage Access Framework). */
     suspend fun copyTo(file: File, uri: String)
@@ -28,8 +32,16 @@ interface ExportSaver {
 
 /** Saves to `Download/Monopack/` through MediaStore (no storage permission needed). */
 class DownloadsSaver(private val context: Context) : ExportSaver {
-    override suspend fun save(file: File): SavedExport {
+    override suspend fun save(file: File, packageName: String?): SavedExport {
         val resolver = context.contentResolver
+        // Replace our earlier file of this name (MediaStore would otherwise add "name (1)").
+        runCatching {
+            resolver.delete(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                "${MediaStore.Downloads.DISPLAY_NAME} = ? AND ${MediaStore.Downloads.RELATIVE_PATH} = ?",
+                arrayOf(file.name, "${Environment.DIRECTORY_DOWNLOADS}/$FOLDER/"),
+            )
+        }
         val values = ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, file.name)
             put(MediaStore.Downloads.MIME_TYPE, mimeTypeFor(file.name))

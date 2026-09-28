@@ -2,6 +2,7 @@ package dev.abhay.monopack.library
 
 import dev.abhay.monopack.export.ExportKind
 import dev.abhay.monopack.model.IconStyle
+import dev.abhay.monopack.render.IconShape
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -13,6 +14,7 @@ data class FolderFile(val name: String, val documentUri: String, val documentId:
  * What Monopack remembers about an export it made, keyed by file name inside the library folder.
  *
  * @property plate / glyph the export's colours (the chosen style's pair), for the thumbnail.
+ * @property shape the icon shape (an `IconShape` name) it was previewed with, for the thumbnail.
  */
 data class ExportRecord(
     val fileName: String,
@@ -25,6 +27,7 @@ data class ExportRecord(
     val glyph: Int? = null,
     val packageName: String? = null,
     val versionCode: Int? = null,
+    val shape: String? = null,
 )
 
 /** One row of the library screen. */
@@ -42,12 +45,14 @@ data class LibraryItem(
     val file: FolderFile?,
     /** Monopack recorded this export (false: found in the folder, details read from the file name). */
     val tracked: Boolean,
+    /** The icon shape it was made with (null: the current preview shape). */
+    val shape: IconShape? = null,
 ) {
     val missing: Boolean get() = file == null
 }
 
 object Library {
-    /** Monopack's export file names: `Monopack-Primary-Dark-20260927-1015.mtz`, `…-pack-….apk`. */
+    /** Monopack's export file names: `Monopack-Blue-Dark-20260927-1015.mtz`, `Monopack-Blue.apk` (older packs: `…-pack-<stamp>.apk`). */
     fun kindOf(fileName: String): ExportKind? = when {
         fileName.endsWith(".mtz", ignoreCase = true) -> ExportKind.THEME
         fileName.endsWith(".apk", ignoreCase = true) -> ExportKind.ICON_PACK
@@ -56,7 +61,7 @@ object Library {
 
     /**
      * An item for a file Monopack didn't record: the title from the name parts ("Monopack ·
-     * Primary · Dark"), the style from a Light/Dark part, the date from the trailing stamp (else the
+     * Blue · Dark"), the style from a Light/Dark part, the date from the trailing stamp (else the
      * file's modification time).
      */
     fun untracked(file: FolderFile): LibraryItem? {
@@ -87,7 +92,7 @@ object Library {
     fun merge(records: Collection<ExportRecord>, files: List<FolderFile>): List<LibraryItem> {
         val byName = files.associateBy { it.name }
         val recorded = records.map { r ->
-            LibraryItem(r.fileName, r.kind, r.title, r.style, r.createdAt, r.iconCount, r.plate, r.glyph, r.packageName, byName[r.fileName], tracked = true)
+            LibraryItem(r.fileName, r.kind, r.title, r.style, r.createdAt, r.iconCount, r.plate, r.glyph, r.packageName, byName[r.fileName], tracked = true, shape = r.shape?.let(IconShape::fromName))
         }
         val known = records.map { it.fileName }.toSet()
         val others = files.filter { it.name !in known }.mapNotNull(::untracked)

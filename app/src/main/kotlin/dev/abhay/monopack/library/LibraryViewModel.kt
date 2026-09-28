@@ -15,6 +15,10 @@ import dev.abhay.monopack.export.ExportState
 import dev.abhay.monopack.export.InstalledPack
 import dev.abhay.monopack.export.PackInstalls
 import dev.abhay.monopack.iconpack.PackNaming
+import dev.abhay.monopack.newapps.InstalledApp
+import dev.abhay.monopack.newapps.NewAppJob
+import dev.abhay.monopack.newapps.NewAppStore
+import dev.abhay.monopack.newapps.WatchablePack
 import dev.abhay.monopack.render.IconShape
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -47,7 +51,19 @@ data class LibraryState(
     val applyHintDismissed: Boolean = false,
     /** The preview icon shape (all previews; exports are unaffected). */
     val iconShape: IconShape = IconShape.DEFAULT,
+    /** Notify about installed apps the current icon pack doesn't cover. */
+    val newAppAlerts: Boolean = false,
+    /** Apps installed after the watched icon pack that it doesn't cover (checked on open and resume). */
+    val newApps: NewAppsFound? = null,
+    /** Installed Monopack icon packs, to pick the watched one from. */
+    val packs: List<WatchablePack> = emptyList(),
+    /** The pack the user picked to watch (null: none picked; a single installed pack is used). */
+    val watchedPack: String? = null,
 ) {
+    /** The pack new apps are checked against: the picked one if installed, else the only one. */
+    val effectiveWatchedPack: WatchablePack?
+        get() = packs.firstOrNull { it.packageName == watchedPack } ?: packs.singleOrNull()
+
     /** No folder yet, or its grant was lost: show onboarding. */
     val needsFolder: Boolean get() = !loading && (tree == null || !hasAccess)
 
@@ -59,6 +75,9 @@ data class LibraryState(
     fun isApplied(item: LibraryItem): Boolean = item.kind == ExportKind.THEME && lastTheme != null && pathFor(item) == lastTheme.absolutePath
 }
 
+/** The home screen's new-apps banner: [apps] aren't in the pack [packLabel]. */
+data class NewAppsFound(val packLabel: String, val apps: List<InstalledApp>)
+
 /** The home screen: exported themes and packs in the library folder. */
 class LibraryViewModel(
     private val store: LibraryStore,
@@ -66,7 +85,17 @@ class LibraryViewModel(
     private val selections: SelectionStore,
     private val packInstalls: PackInstalls,
     runner: ExportRunner? = null,
+    private val newApps: NewAppStore? = null,
+    /** Schedules (true) or cancels the periodic new-app check. */
+    private val scheduleNewApps: (Boolean) -> Unit = {},
+    /** Apps the watched pack doesn't cover (null without one). */
+    private val findNewApps: suspend () -> NewAppsFound? = { null },
+    /** Installed Monopack packs. */
+    private val listPacks: suspend () -> List<WatchablePack> = { emptyList() },
 ) : ViewModel() {
+    /** New-app banners dismissed this session (by component), until other new apps turn up. */
+    private var dismissedNewApps = emptySet<String>()
+
     private val _state = MutableStateFlow(LibraryState())
     val state: StateFlow<LibraryState> = _state.asStateFlow()
 
@@ -84,7 +113,12 @@ class LibraryViewModel(
             val lastTheme = runCatching { selections.loadLastTheme() }.getOrNull()
             val hintDismissed = runCatching { store.loadApplyHintDismissed() }.getOrDefault(false)
             val shape = IconShape.fromName(runCatching { store.loadIconShape() }.getOrNull())
-            _state.update { it.copy(applyHintDismissed = hintDismissed, iconShape = shape) }
+            val alerts = runCatching { newApps?.loadEnabled() }.getOrNull() ?: false
+            val packs = runCatching { listPacks() }.getOrDefault(emptyList())
+            val watched = runCatching { newApps?.loadWatchedPack() }.getOrNull()
+            val found = runCatching { findNewApps() }.onFailure { Log.w(TAG, "New-app check failed", it) }.getOrNull()
+                ?.takeIf { f -> f.apps.isNotEmpty() && !dismissedNewApps.containsAll(f.apps.map { it.component }) }
+            _state.update { it.copy(applyHintDismissed = hintDismissed, iconShape = shape, newAppAlerts = alerts, newApps = found, packs = packs, watchedPack = watched) }
             if (tree == null || !access) {
                 _state.update { it.copy(loading = false, tree = tree, hasAccess = false, lastTheme = lastTheme, items = emptyList()) }
                 return@launch
@@ -133,6 +167,8 @@ class LibraryViewModel(
     }
 
     fun clearSelection() = _state.update { it.copy(selected = emptySet()) }
+
+    fun selectAll() = _state.update { s -> s.copy(selected = s.items.map { it.fileName }.toSet()) }
 
     /** Deletes the selected items' files from the folder and their records. */
     fun deleteSelected() {
@@ -188,6 +224,36 @@ class LibraryViewModel(
         viewModelScope.launch { runCatching { store.saveApplyHintDismissed() } }
     }
 
+    /** Settings: show the HyperOS "pick the theme file" help again. */
+    fun resetApplyHint() {
+        _state.update { it.copy(applyHintDismissed = false) }
+        viewModelScope.launch { runCatching { store.saveApplyHintDismissed(false) } }
+    }
+
+    /** Hides the new-apps banner until other new apps are installed. */
+    fun dismissNewApps() {
+        dismissedNewApps = dismissedNewApps + _state.value.newApps?.apps.orEmpty().map { it.component }
+        _state.update { it.copy(newApps = null) }
+    }
+
+    /** Settings: the icon pack to check new apps against. */
+    fun setWatchedPack(packageName: String) {
+        _state.update { it.copy(watchedPack = packageName) }
+        viewModelScope.launch {
+            runCatching { newApps?.saveWatchedPack(packageName) }
+            refresh()
+        }
+    }
+
+    /** Settings: turn the new-app notification on or off. */
+    fun setNewAppAlerts(enabled: Boolean) {
+        _state.update { it.copy(newAppAlerts = enabled) }
+        viewModelScope.launch {
+            runCatching { newApps?.saveEnabled(enabled) }
+            runCatching { scheduleNewApps(enabled) }.onFailure { Log.w(TAG, "Couldn't schedule the new-app check", it) }
+        }
+    }
+
     /** Shows the folder in a file manager (to install a pack). */
     fun openFolder(): Boolean = _state.value.tree?.let { folder.open(it) } ?: false
 
@@ -197,7 +263,18 @@ class LibraryViewModel(
         val Factory = viewModelFactory {
             initializer {
                 val container = this[APPLICATION_KEY]!!.appContainer
-                LibraryViewModel(container.libraryStore, container.libraryFolder, container.selectionStore, container.packInstalls, container.exportRunner)
+                val app = this[APPLICATION_KEY]!!
+                LibraryViewModel(
+                    container.libraryStore,
+                    container.libraryFolder,
+                    container.selectionStore,
+                    container.packInstalls,
+                    container.exportRunner,
+                    container.newAppStore,
+                    scheduleNewApps = { NewAppJob.sync(app, it) },
+                    findNewApps = { container.newAppCheck.find()?.let { NewAppsFound(it.pack.label, it.uncovered) } },
+                    listPacks = { container.newAppCheck.packs() },
+                )
             }
         }
     }

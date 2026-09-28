@@ -154,7 +154,7 @@ class MainViewModelTest {
     private val exporter = FakeExporter()
 
     private val saver = object : ExportSaver {
-        override suspend fun save(file: File) =
+        override suspend fun save(file: File, packageName: String?) =
             SavedExport("content://downloads/1", "Download/Monopack/${file.name}", "/sdcard/Download/Monopack/${file.name}")
 
         override suspend fun copyTo(file: File, uri: String) = Unit
@@ -342,6 +342,23 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `select all selects every app in the current filter`() = runTest(dispatcher) {
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.preview()
+        val (alpha, _, gamma) = vm.state.value.items.map { it.app.key }
+        vm.saveEdit(gamma, IconEdit(IconStyle.LIGHT))
+        vm.onLongPress(vm.state.value.items[0])
+        vm.setFilter(GridFilter.EDITED)
+        vm.selectAll()
+        // The earlier pick stays; the filter adds only the edited app.
+        assertThat(vm.state.value.selected).containsExactly(alpha, gamma)
+        vm.setFilter(GridFilter.ALL)
+        vm.selectAll()
+        assertThat(vm.state.value.selected).hasSize(vm.state.value.items.count { it.glyph != null })
+    }
+
+    @Test
     fun `cancel clears the selection`() = runTest(dispatcher) {
         val vm = viewModel()
         advanceUntilIdle()
@@ -485,13 +502,13 @@ class MainViewModelTest {
         val beta = vm.state.value.items[1]
         vm.saveEdit(beta.app.key, IconEdit(IconStyle.LIGHT, contrast = 60, autoNight = false))
         val options = vm.defaultExportOptions()!!
-        assertThat(options).isEqualTo(ExportOptions("Monopack · Primary", setOf(IconStyle.DARK), target = ExportTarget.ICON_PACK))
+        assertThat(options).isEqualTo(ExportOptions("Monopack", setOf(IconStyle.DARK), target = ExportTarget.ICON_PACK))
         vm.export(options.copy(target = ExportTarget.HYPEROS), java.time.LocalDateTime.of(2026, 9, 27, 10, 15))
         advanceUntilIdle()
 
         val request = exporter.request!!
-        assertThat(request.title).isEqualTo("Monopack · Primary · Dark")
-        assertThat(request.fileName).isEqualTo("Monopack-Primary-Dark-20260927-1015.mtz")
+        assertThat(request.title).isEqualTo("Monopack · Dark")
+        assertThat(request.fileName).isEqualTo("Monopack-Dark-20260927-1015.mtz")
         assertThat(request.apps.map { it.app.label }).containsExactly("Alpha", "Beta", "Gamma").inOrder()
         val dark = wallpaper[Accent.PRIMARY]!![IconStyle.DARK]
         val light = wallpaper[Accent.PRIMARY]!![IconStyle.LIGHT]
@@ -501,8 +518,8 @@ class MainViewModelTest {
 
         val done = vm.state.value.export as ExportState.Done
         val file = done.files.single()
-        assertThat(file.location).isEqualTo("Download/Monopack/Monopack-Primary-Dark-20260927-1015.mtz")
-        assertThat(file.absolutePath).isEqualTo("/sdcard/Download/Monopack/Monopack-Primary-Dark-20260927-1015.mtz")
+        assertThat(file.location).isEqualTo("Download/Monopack/Monopack-Dark-20260927-1015.mtz")
+        assertThat(file.absolutePath).isEqualTo("/sdcard/Download/Monopack/Monopack-Dark-20260927-1015.mtz")
         assertThat(file.iconCount).isEqualTo(3)
         vm.dismissExport()
         advanceUntilIdle()
@@ -541,9 +558,11 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `custom colours are named in the export title`() {
+    fun `preset colours are named in the export title, accents and hand-picked colours aren't`() {
         val selection = Selection(IconStyle.LIGHT, Accent.TERTIARY, ColorSource.CUSTOM, SeedPresets.AOSP[4])
-        assertThat(MainViewModel.exportTitle(selection)).isEqualTo("Monopack · Blue · Tertiary · Light")
+        assertThat(MainViewModel.exportTitle(selection)).isEqualTo("Monopack · Blue · Light")
+        assertThat(MainViewModel.exportName(selection.copy(seed = dev.abhay.monopack.palette.SeedColors.custom(200.0)))).isEqualTo("Monopack")
+        assertThat(MainViewModel.exportName(selection.copy(source = ColorSource.WALLPAPER))).isEqualTo("Monopack")
         assertThat(dev.abhay.monopack.export.ExportJobs.fileNameFor("My theme! · Light", java.time.LocalDateTime.of(2026, 1, 2, 3, 4)))
             .isEqualTo("Mytheme-Light-20260102-0304.mtz")
     }
@@ -580,7 +599,7 @@ class MainViewModelTest {
 
         val request = packExporter.request!!
         assertThat(request.name).isEqualTo("My pack · Dark")
-        assertThat(request.fileName).isEqualTo("Mypack-Dark-pack-20260927-1015.apk")
+        assertThat(request.fileName).isEqualTo("Mypack-Dark.apk")
         val dark = wallpaper[Accent.PRIMARY]!![IconStyle.DARK]!!
         val (alpha, edited, gamma) = request.apps
         assertThat(alpha.day).isEqualTo(dark)

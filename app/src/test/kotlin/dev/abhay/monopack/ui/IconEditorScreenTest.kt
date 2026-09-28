@@ -109,7 +109,7 @@ class IconEditorScreenTest {
         compose.onNodeWithText("100%").performScrollTo().assertIsDisplayed()
         snapshot("editor-edited")
 
-        compose.onNodeWithText("Save").performClick()
+        compose.onNodeWithContentDescription("Save").performClick()
         assertThat(saved).isEqualTo(IconEdit(IconStyle.DARK, glyphToneOffset = 3, plateToneOffset = -6, inverted = true, contrast = 100))
     }
 
@@ -117,7 +117,7 @@ class IconEditorScreenTest {
     fun cancellingWithChangesAsksFirst() {
         show()
         compose.onNodeWithText("Dark icon").performClick()
-        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithContentDescription("Cancel").performClick()
         compose.onNodeWithText("Discard changes?").assertIsDisplayed()
         assertThat(closed).isFalse()
         compose.onNodeWithText("Discard").performClick()
@@ -127,7 +127,7 @@ class IconEditorScreenTest {
     @Test
     fun cancellingWithoutChangesClosesDirectly() {
         show()
-        compose.onNodeWithText("Cancel").performClick()
+        compose.onNodeWithContentDescription("Cancel").performClick()
         assertThat(closed).isTrue()
     }
 
@@ -138,7 +138,7 @@ class IconEditorScreenTest {
         compose.onNodeWithContentDescription("Dark mode preview").assertDoesNotExist()
         compose.onNodeWithContentDescription("Light mode and Dark mode preview").assertIsDisplayed()
         snapshot("editor-one-row")
-        compose.onNodeWithText("Save").performClick()
+        compose.onNodeWithContentDescription("Save").performClick()
         assertThat(saved).isEqualTo(IconEdit(IconStyle.LIGHT, autoNight = false))
     }
 
