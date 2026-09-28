@@ -1,4 +1,4 @@
-# HyperIcon
+# Monopack
 
 Material You themed icons you can fix per app, generated on-device and exported as an icons-only HyperOS theme (`.mtz`) or as an icon pack for launchers that support them.
 
@@ -6,11 +6,11 @@ _More documentation to come._
 
 ## License
 
-HyperIcon is free software, licensed under the [GNU General Public License v3.0](LICENSE).
+Monopack is free software, licensed under the [GNU General Public License v3.0](LICENSE).
 
 ## Credits
 
-HyperIcon builds on, ports code from, or was informed by these open-source projects. Thank you!
+Monopack builds on, ports code from, or was informed by these open-source projects. Thank you!
 
 | Project | License | Used for |
 |---|---|---|

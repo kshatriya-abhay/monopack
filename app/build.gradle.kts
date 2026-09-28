@@ -4,14 +4,14 @@ plugins {
 }
 
 android {
-    namespace = "dev.abhay.hypericon"
+    namespace = "dev.abhay.monopack"
     // Latest AndroidX needs API 37 to compile; this doesn't change min (35) or target (36).
     compileSdk {
         version = release(37) { minorApiLevel = 2 }
     }
 
     defaultConfig {
-        applicationId = "dev.abhay.hypericon"
+        applicationId = "dev.abhay.monopack"
         minSdk = 35
         targetSdk = 36
         versionCode = 1

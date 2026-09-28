@@ -28,7 +28,7 @@ run = "./gradlew installDebug"
 [tasks.run]
 description = "Install and launch on the connected device"
 depends = ["install"]
-run = "adb shell am start -n dev.abhay.hypericon/.MainActivity"
+run = "adb shell am start -n dev.abhay.monopack/.MainActivity"
 
 [tasks.check-pack]
 description = "Inspect and verify an icon pack APK: mise run check-pack <file.apk>"

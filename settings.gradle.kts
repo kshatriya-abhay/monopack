@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "HyperIcon"
+rootProject.name = "Monopack"
 include(":app")
