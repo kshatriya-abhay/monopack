@@ -72,6 +72,11 @@ val CREDITS = listOf(
 fun SettingsScreen(
     applyHintDismissed: Boolean,
     onChangeFolder: () -> Unit,
+    /** Shows the library folder in a file manager; false if nothing could. */
+    onOpenFolder: () -> Boolean = { false },
+    /** Whether Monopack may install packs ("Install unknown apps"), and the way to allow it. */
+    canInstall: Boolean = false,
+    onAllowInstalls: () -> Unit = {},
     onResetApplyHint: () -> Unit,
     onBack: () -> Unit,
     newAppAlerts: Boolean = false,
@@ -119,7 +124,14 @@ fun SettingsScreen(
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
             Section("Storage")
+            Item("Open folder", "See your icon packs in a file manager") {
+                if (!onOpenFolder()) Toast.makeText(context, "No file manager found", Toast.LENGTH_SHORT).show()
+            }
             Item("Change folder", "Where Monopack saves your icon packs") { onChangeFolder() }
+            Item(
+                "Install icon packs",
+                if (canInstall) "Allowed. Packs install in one tap." else "Not allowed. Tap to allow Monopack to install packs.",
+            ) { onAllowInstalls() }
 
             Section("New apps")
             SwitchItem(

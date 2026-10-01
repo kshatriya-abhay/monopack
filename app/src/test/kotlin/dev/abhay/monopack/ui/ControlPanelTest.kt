@@ -58,19 +58,18 @@ class ControlPanelTest {
         compose.setContent {
             MonopackTheme {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-                    ControlPanel(state, {}, {}, {}, {}, {})
+                    ControlPanel(state, {}, {}, {}, {})
                 }
             }
         }
         compose.onNodeWithText("Preview mode").assertIsDisplayed()
         snapshot("expanded")
 
-        compose.onNodeWithText("Not previewed yet").performClick()
+        compose.onNodeWithText("Preparing icons…").performClick()
         compose.onNodeWithText("Preview mode").assertDoesNotExist()
-        compose.onNodeWithText("Preview").assertDoesNotExist()
         snapshot("collapsed")
 
-        compose.onNodeWithText("Not previewed yet").performClick()
+        compose.onNodeWithText("Preparing icons…").performClick()
         compose.onNodeWithText("Preview mode").assertIsDisplayed()
     }
 
@@ -80,7 +79,7 @@ class ControlPanelTest {
         compose.setContent {
             MonopackTheme {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-                    ControlPanel(state, {}, {}, {}, {}, {}, iconShape = IconShape.SQUIRCLE, onIconShape = { shape = it })
+                    ControlPanel(state, {}, {}, {}, {}, iconShape = IconShape.SQUIRCLE, onIconShape = { shape = it })
                 }
             }
         }
@@ -94,16 +93,16 @@ class ControlPanelTest {
         compose.setContent {
             MonopackTheme {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-                    ControlPanel(state, {}, {}, {}, {}, {})
+                    ControlPanel(state, {}, {}, {}, {})
                 }
             }
         }
-        compose.onNodeWithText("Not previewed yet").performTouchInput { swipe(center, center + Offset(0f, 1800f), durationMillis = 400) }
+        compose.onNodeWithText("Preparing icons…").performTouchInput { swipe(center, center + Offset(0f, 1800f), durationMillis = 400) }
         compose.waitForIdle()
         compose.onNodeWithText("Preview mode").assertDoesNotExist()
         snapshot("dragged-collapsed")
 
-        compose.onNodeWithText("Not previewed yet").performTouchInput { swipe(center, center - Offset(0f, 1800f), durationMillis = 400) }
+        compose.onNodeWithText("Preparing icons…").performTouchInput { swipe(center, center - Offset(0f, 1800f), durationMillis = 400) }
         compose.waitForIdle()
         compose.onNodeWithText("Preview mode").assertIsDisplayed()
         snapshot("dragged-expanded")
@@ -113,20 +112,19 @@ class ControlPanelTest {
     fun collapseRequestCollapsesThePanel() {
         var requests by mutableIntStateOf(0)
         compose.setContent {
-            MonopackTheme { ControlPanel(state, {}, {}, {}, {}, {}, collapseRequests = requests) }
+            MonopackTheme { ControlPanel(state, {}, {}, {}, {}, collapseRequests = requests) }
         }
         compose.onNodeWithText("Preview mode").assertIsDisplayed()
         requests++
         compose.waitForIdle()
         compose.onNodeWithText("Preview mode").assertDoesNotExist()
-        compose.onNodeWithText("Preview").assertDoesNotExist()
     }
 
     @Test
     fun expandRequestExpandsACollapsedPanel() {
         var expand by mutableIntStateOf(0)
         compose.setContent {
-            MonopackTheme { ControlPanel(state, {}, {}, {}, {}, {}, collapseRequests = 1, expandRequests = expand) }
+            MonopackTheme { ControlPanel(state, {}, {}, {}, {}, collapseRequests = 1, expandRequests = expand) }
         }
         compose.waitForIdle()
         compose.onNodeWithText("Preview mode").assertDoesNotExist()
@@ -136,20 +134,13 @@ class ControlPanelTest {
     }
 
     @Test
-    fun previewIsDisabledWhenTheSelectionIsAlreadyShown() {
+    fun theCaptionShowsWhatTheGridShows() {
         val shown = state.copy(committed = state.pending, committedPalette = state.pendingPalette)
         compose.setContent {
-            MonopackTheme { ControlPanel(shown, {}, {}, {}, {}, {}) }
+            MonopackTheme { ControlPanel(shown, {}, {}, {}, {}) }
         }
-        compose.onNodeWithText("Preview").assertIsNotEnabled()
-    }
-
-    @Test
-    fun previewShowsProgressWhileIconsLoad() {
-        compose.setContent {
-            MonopackTheme { ControlPanel(state.copy(scanning = true), {}, {}, {}, {}, {}) }
-        }
-        compose.onNodeWithText("Preparing icons… 0%").assertIsNotEnabled()
+        compose.onNodeWithText("Showing Blue · Primary · dark mode").assertIsDisplayed()
+        compose.onNodeWithText("Preview").assertDoesNotExist()
     }
 
     private fun snapshot(name: String) {

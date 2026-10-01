@@ -29,6 +29,17 @@ object Symbols {
         )
     }
 
+    /** Material "download": install a pack. */
+    val Install: ImageVector by lazy { symbol("Install", "M5,20h14v-2H5v2zM19,9h-4V3H9v6H5l7,7 7,-7z") }
+
+    /** Material "cancel": clear the search text. */
+    val Clear: ImageVector by lazy {
+        symbol(
+            "Clear",
+            "M12,2C6.47,2 2,6.47 2,12s4.47,10 10,10 10,-4.47 10,-10S17.53,2 12,2zM17,15.59L15.59,17 12,13.41 8.41,17 7,15.59 10.59,12 7,8.41 8.41,7 12,10.59 15.59,7 17,8.41 13.41,12 17,15.59z",
+        )
+    }
+
     private fun symbol(name: String, path: String): ImageVector =
         ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f)
             .addPath(PathParser().parsePathString(path).toNodes(), fill = SolidColor(Color.Black))

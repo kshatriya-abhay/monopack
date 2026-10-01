@@ -36,6 +36,14 @@ class FakeLibraryStore(var tree: String? = null) : LibraryStore {
     override suspend fun saveIconShape(shape: String) {
         iconShape = shape
     }
+
+    var installStepDone = false
+
+    override suspend fun loadInstallStepDone() = installStepDone
+
+    override suspend fun saveInstallStepDone() {
+        installStepDone = true
+    }
 }
 
 class FakeLibraryFolder : LibraryFolder {

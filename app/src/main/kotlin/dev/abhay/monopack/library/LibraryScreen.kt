@@ -35,7 +35,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -66,12 +65,16 @@ import dev.abhay.monopack.hyperos.ThemeToApply
 import dev.abhay.monopack.model.IconStyle
 import dev.abhay.monopack.newapps.NewApps
 import dev.abhay.monopack.render.LocalIconShape
+import dev.abhay.monopack.export.PackToInstall
+import dev.abhay.monopack.iconpack.PackNaming
+import dev.abhay.monopack.ui.InstallPack
 import dev.abhay.monopack.ui.Symbols
 import dev.abhay.monopack.ui.TooltipIconButton
 
 /**
  * The home screen: themes and icon packs in the library folder, newest first. Tap a theme to apply
- * its icons, tap a pack to open the folder (to install it), long-press to select and delete.
+ * its icons, tap a pack to edit and rebuild it (or its button to install it), long-press to select
+ * and delete.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -83,11 +86,15 @@ fun LibraryScreen(
     onDeleteSelected: () -> Unit,
     onRemoveMissing: (LibraryItem) -> Unit,
     onApplied: (LibraryItem) -> Unit,
-    onOpenFolder: () -> Boolean,
     onSettings: () -> Unit,
     applyTheme: ApplyTheme = ApplyTheme {},
     onDismissNewApps: () -> Unit = {},
     onSelectAll: () -> Unit = {},
+    /** Tap on an icon pack: Edit icon pack (rebuild it with the same name). */
+    onEditPack: (LibraryItem) -> Unit = {},
+    installPack: InstallPack = InstallPack {},
+    /** The new-apps banner's Update pack: edit the watched pack. */
+    onUpdateNewApps: (NewAppsFound) -> Unit = {},
 ) {
     val context = LocalContext.current
     var confirmDelete by remember { mutableStateOf(false) }
@@ -103,11 +110,15 @@ fun LibraryScreen(
 
     fun open(item: LibraryItem) {
         when {
+            item.kind == ExportKind.ICON_PACK -> onEditPack(item)
             item.missing -> Unit
-            item.kind == ExportKind.THEME -> apply(item)
-            onOpenFolder() -> Toast.makeText(context, "Tap ${item.fileName} to install it", Toast.LENGTH_LONG).show()
-            else -> Toast.makeText(context, "No file manager found", Toast.LENGTH_SHORT).show()
+            else -> apply(item)
         }
+    }
+
+    fun install(item: LibraryItem) {
+        val file = item.file ?: return
+        installPack(PackToInstall(file.documentUri, item.title, item.packageName ?: PackNaming.packageFor(item.title)))
     }
 
     Scaffold(
@@ -148,7 +159,7 @@ fun LibraryScreen(
             state.items.isEmpty() -> EmptyLibrary(padding, state.error)
             else -> LazyColumn(contentPadding = PaddingValues(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 88.dp)) {
                 state.newApps?.let { found ->
-                    item(key = "new-apps") { NewAppsBanner(found, onUpdate = onCreate, onDismiss = onDismissNewApps) }
+                    item(key = "new-apps") { NewAppsBanner(found, onUpdate = { onUpdateNewApps(found) }, onDismiss = onDismissNewApps) }
                 }
                 state.error?.let { error -> item { Text(error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp)) } }
                 items(state.items, key = { it.fileName }) { item ->
@@ -160,6 +171,7 @@ fun LibraryScreen(
                         onClick = { if (state.selecting) onToggle(item) else open(item) },
                         onLongClick = { onToggle(item) },
                         onRemove = { onRemoveMissing(item) },
+                        onInstall = { install(item) },
                     )
                     HorizontalDivider(Modifier.padding(start = 88.dp))
                 }
@@ -237,6 +249,7 @@ private fun LibraryRow(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onRemove: () -> Unit,
+    onInstall: () -> Unit,
 ) {
     Row(
         Modifier
@@ -291,8 +304,9 @@ private fun LibraryRow(
                 }
             }
         }
-        if (item.missing) {
-            IconButton(onClick = onRemove) { Icon(Icons.Filled.Delete, contentDescription = "Remove ${item.title}") }
+        when {
+            item.missing -> TooltipIconButton(Icons.Filled.Delete, "Remove ${item.title}", onRemove)
+            item.kind == ExportKind.ICON_PACK -> TooltipIconButton(Symbols.Install, "Install ${item.title}", onInstall)
         }
     }
 }

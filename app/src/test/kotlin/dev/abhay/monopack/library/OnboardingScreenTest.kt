@@ -9,6 +9,7 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import com.google.common.truth.Truth.assertThat
 import dev.abhay.monopack.ui.theme.MonopackTheme
 import java.io.File
 import org.junit.Rule
@@ -48,6 +49,19 @@ class OnboardingScreenTest {
         compose.onNodeWithText("Choose the Monopack folder").assertIsDisplayed()
         compose.onNodeWithText("It opens in Download/Monopack.", substring = true).assertIsDisplayed()
         folder.deleteRecursively()
+    }
+
+    @Test
+    fun theInstallStepCanBeAllowedOrSkipped() {
+        var allowed = false
+        var skipped = false
+        compose.setContent { MonopackTheme { InstallPermissionStep(onAllow = { allowed = true }, onSkip = { skipped = true }) } }
+        compose.onNodeWithText("Install packs from Monopack").assertIsDisplayed()
+        snapshot("onboarding-install")
+        compose.onNodeWithText("Allow").performClick()
+        compose.onNodeWithText("Skip for now").performClick()
+        assertThat(allowed).isTrue()
+        assertThat(skipped).isTrue()
     }
 
     private fun snapshot(name: String) {

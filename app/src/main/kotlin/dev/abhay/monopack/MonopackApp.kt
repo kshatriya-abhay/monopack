@@ -11,6 +11,7 @@ import dev.abhay.monopack.export.ExportRunner
 import dev.abhay.monopack.export.ExportService
 import dev.abhay.monopack.export.IconPackExporter
 import dev.abhay.monopack.hyperos.MtzExporter
+import dev.abhay.monopack.export.PackInstaller
 import dev.abhay.monopack.export.PackSigner
 import dev.abhay.monopack.library.DataStoreLibraryStore
 import dev.abhay.monopack.library.FolderSaver
@@ -50,6 +51,7 @@ class AppContainer(context: Context) {
     val exportSaver = FolderSaver(libraryStore, libraryFolder, DownloadsSaver(context))
     private val packSigner = PackSigner()
     val packInstalls = AndroidPackInstalls(context, packSigner)
+    val packInstaller = PackInstaller(context)
     val newAppStore = DataStoreNewAppStore(context)
     val newAppCheck = NewAppCheck(context, newAppStore, packInstalls)
 

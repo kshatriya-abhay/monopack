@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import dev.abhay.monopack.data.SelectionJson
 import dev.abhay.monopack.export.ExportKind
 import dev.abhay.monopack.model.IconStyle
 import kotlinx.coroutines.flow.first
@@ -34,6 +35,11 @@ interface LibraryStore {
     suspend fun loadIconShape(): String?
 
     suspend fun saveIconShape(shape: String)
+
+    /** The onboarding's install-permission step was completed or skipped. */
+    suspend fun loadInstallStepDone(): Boolean
+
+    suspend fun saveInstallStepDone()
 }
 
 private val Context.libraryDataStore: DataStore<Preferences> by preferencesDataStore(name = "library")
@@ -76,7 +82,14 @@ class DataStoreLibraryStore(context: Context) : LibraryStore {
         store.edit { it[ICON_SHAPE] = shape }
     }
 
+    override suspend fun loadInstallStepDone(): Boolean = store.data.first()[INSTALL_STEP] ?: false
+
+    override suspend fun saveInstallStepDone() {
+        store.edit { it[INSTALL_STEP] = true }
+    }
+
     private companion object {
+        val INSTALL_STEP = booleanPreferencesKey("install_step_done")
         val ICON_SHAPE = stringPreferencesKey("icon_shape")
         val APPLY_HINT = booleanPreferencesKey("apply_hint_dismissed")
         val TREE = stringPreferencesKey("tree")
@@ -100,7 +113,8 @@ internal object RecordsJson {
                     .put("glyph", r.glyph)
                     .put("package", r.packageName)
                     .put("version", r.versionCode)
-                    .put("shape", r.shape),
+                    .put("shape", r.shape)
+                    .put("selection", r.selection?.let(SelectionJson::encode)),
             )
         }
     }.toString()
@@ -125,6 +139,7 @@ internal object RecordsJson {
                         packageName = e.optString("package").takeIf { it.isNotEmpty() },
                         versionCode = if (e.has("version")) e.optInt("version") else null,
                         shape = e.optString("shape").takeIf { it.isNotEmpty() },
+                        selection = SelectionJson.decode(e.optJSONObject("selection")),
                     ),
                 )
             }

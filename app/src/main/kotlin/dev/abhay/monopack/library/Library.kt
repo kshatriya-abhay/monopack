@@ -2,6 +2,7 @@ package dev.abhay.monopack.library
 
 import dev.abhay.monopack.export.ExportKind
 import dev.abhay.monopack.model.IconStyle
+import dev.abhay.monopack.model.Selection
 import dev.abhay.monopack.render.IconShape
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -28,6 +29,8 @@ data class ExportRecord(
     val packageName: String? = null,
     val versionCode: Int? = null,
     val shape: String? = null,
+    /** The colour selection it was made from (packs; to edit and rebuild it). */
+    val selection: Selection? = null,
 )
 
 /** One row of the library screen. */
@@ -47,7 +50,12 @@ data class LibraryItem(
     val tracked: Boolean,
     /** The icon shape it was made with (null: the current preview shape). */
     val shape: IconShape? = null,
+    /** The colour selection it was made from, if recorded. */
+    val selection: Selection? = null,
 ) {
+    /** A pack's icon styles: both (Light & Dark) unless it was made with one. */
+    val packStyles: Set<IconStyle> get() = style?.let(::setOf) ?: IconStyle.entries.toSet()
+
     val missing: Boolean get() = file == null
 }
 
@@ -92,7 +100,7 @@ object Library {
     fun merge(records: Collection<ExportRecord>, files: List<FolderFile>): List<LibraryItem> {
         val byName = files.associateBy { it.name }
         val recorded = records.map { r ->
-            LibraryItem(r.fileName, r.kind, r.title, r.style, r.createdAt, r.iconCount, r.plate, r.glyph, r.packageName, byName[r.fileName], tracked = true, shape = r.shape?.let(IconShape::fromName))
+            LibraryItem(r.fileName, r.kind, r.title, r.style, r.createdAt, r.iconCount, r.plate, r.glyph, r.packageName, byName[r.fileName], tracked = true, shape = r.shape?.let(IconShape::fromName), selection = r.selection)
         }
         val known = records.map { it.fileName }.toSet()
         val others = files.filter { it.name !in known }.mapNotNull(::untracked)

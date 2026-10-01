@@ -53,7 +53,6 @@ class LibraryScreenTest {
                 onDeleteSelected = { deleted = true },
                 onRemoveMissing = { removed = it },
                 onApplied = {},
-                onOpenFolder = { true },
                 onSettings = {},
             )
         }
@@ -62,8 +61,8 @@ class LibraryScreenTest {
     private val base = LibraryState(loading = false, tree = "t", hasAccess = true, folderLabel = "Download/Monopack")
 
     @Test
-    fun newAppsBannerLeadsToCreate() {
-        var created = false
+    fun newAppsBannerLeadsToUpdatingThePack() {
+        var updating: NewAppsFound? = null
         var dismissed = false
         compose.setContent {
             MonopackTheme {
@@ -72,13 +71,13 @@ class LibraryScreenTest {
                         items = listOf(pack),
                         newApps = NewAppsFound("My pack", listOf(InstalledApp("s/s.Main", "Swiggy", 2), InstalledApp("z/z.Main", "Zepto", 3))),
                     ),
-                    onCreate = { created = true },
+                    onCreate = {},
+                    onUpdateNewApps = { updating = it },
                     onToggle = {},
                     onClearSelection = {},
                     onDeleteSelected = {},
                     onRemoveMissing = {},
                     onApplied = {},
-                    onOpenFolder = { true },
                     onSettings = {},
                     onDismissNewApps = { dismissed = true },
                 )
@@ -88,7 +87,7 @@ class LibraryScreenTest {
         compose.onNodeWithText("Swiggy and Zepto aren't in My pack.").assertIsDisplayed()
         snapshot("library-new-apps")
         compose.onNodeWithText("Update pack").performClick()
-        assertThat(created).isTrue()
+        assertThat(updating!!.packLabel).isEqualTo("My pack")
         compose.onNodeWithText("Dismiss").performClick()
         assertThat(dismissed).isTrue()
     }
@@ -101,6 +100,32 @@ class LibraryScreenTest {
         snapshot("library")
         compose.onNodeWithContentDescription("Remove Monopack · Blue · Dark").performClick()
         assertThat(removed).isEqualTo(missing)
+    }
+
+    @Test
+    fun tappingAPackEditsItAndItsButtonInstalls() {
+        var edited: LibraryItem? = null
+        var opened = false
+        compose.setContent {
+            MonopackTheme {
+                LibraryScreen(
+                    state = base.copy(items = listOf(pack)),
+                    onCreate = {},
+                    onToggle = {},
+                    onClearSelection = {},
+                    onDeleteSelected = {},
+                    onRemoveMissing = {},
+                    onApplied = {},
+                    installPack = { opened = true },
+                    onSettings = {},
+                    onEditPack = { edited = it },
+                )
+            }
+        }
+        compose.onNodeWithText(pack.title).performClick()
+        assertThat(edited).isEqualTo(pack)
+        compose.onNodeWithContentDescription("Install ${pack.title}").performClick()
+        assertThat(opened).isTrue()
     }
 
     @Test

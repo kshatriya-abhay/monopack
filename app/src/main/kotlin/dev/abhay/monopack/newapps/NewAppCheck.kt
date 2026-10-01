@@ -77,7 +77,7 @@ class NewAppCheck(private val context: Context, private val store: NewAppStore, 
         val xml = runCatching {
             context.createPackageContext(pack.packageName, 0).assets.open("appfilter.xml").use { it.readBytes().decodeToString() }
         }.onFailure { Log.w(TAG, "Couldn't read ${pack.packageName}", it) }.getOrNull() ?: return null
-        return CoveringPack(label(pack), pack.lastUpdateTime, NewApps.components(xml))
+        return CoveringPack(label(pack), pack.lastUpdateTime, NewApps.components(xml), pack.packageName)
     }
 
     private fun label(pack: PackageInfo): String =
@@ -105,7 +105,8 @@ class NewAppCheck(private val context: Context, private val store: NewAppStore, 
         val title = if (apps.size == 1) "${apps[0].label} has no themed icon" else "${apps.size} new apps have no themed icon"
         val text = "${NewApps.names(apps)} ${if (apps.size == 1) "isn't" else "aren't"} in ${pack.label}. Tap to update the pack."
         val open = Intent(context, MainActivity::class.java)
-            .putExtra(MainActivity.EXTRA_OPEN_CREATE, true)
+            .putExtra(MainActivity.EXTRA_UPDATE_PACK, pack.packageName)
+            .putExtra(MainActivity.EXTRA_UPDATE_PACK_LABEL, pack.label)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val notification = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher_monochrome)

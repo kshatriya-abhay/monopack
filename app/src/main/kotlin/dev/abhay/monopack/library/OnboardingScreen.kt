@@ -160,3 +160,43 @@ private const val FOLDER_NAME = "Monopack"
 /** `Download/Monopack` (directories in shared storage are visible without a permission). */
 private val suggestedFolder: File
     get() = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), FOLDER_NAME)
+
+/**
+ * Onboarding, after the folder: let Monopack install the icon packs it makes ("Install unknown
+ * apps"). Skippable; installing a pack asks again later.
+ */
+@Composable
+fun InstallPermissionStep(onAllow: () -> Unit, onSkip: () -> Unit) {
+    Surface(Modifier.fillMaxSize()) {
+        Column(
+            Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 32.dp, vertical = 24.dp),
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Box(
+                Modifier.size(88.dp).clip(HyperOsShape).background(MaterialTheme.colorScheme.primaryContainer).align(Alignment.CenterHorizontally),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painterResource(R.drawable.ic_launcher_monochrome),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.requiredSize(132.dp),
+                )
+            }
+            Spacer(Modifier.height(32.dp))
+            Text("Install packs from Monopack", style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "Allow Monopack to install the icon packs it makes, so a pack installs in one tap and updates without asking again.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(20.dp))
+            SetupStep(1, "Tap Allow. Android opens \"Install unknown apps\" for Monopack.")
+            SetupStep(2, "Turn on \"Allow from this source\", then come back.")
+            Spacer(Modifier.height(24.dp))
+            Button(onClick = onAllow, modifier = Modifier.fillMaxWidth()) { Text("Allow") }
+            TextButton(onClick = onSkip, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Skip for now") }
+        }
+    }
+}

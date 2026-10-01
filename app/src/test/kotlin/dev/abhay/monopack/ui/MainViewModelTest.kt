@@ -190,7 +190,27 @@ class MainViewModelTest {
         assertThat(state.iconsReady).isTrue()
         assertThat(state.items.map { it.app.label }).containsExactly("Alpha", "Beta", "Gamma").inOrder()
         assertThat(state.pending.style).isEqualTo(IconStyle.DARK)
-        assertThat(state.previewEnabled).isTrue()
+        // The controls' selection is applied to the grid as soon as the icons are ready.
+        assertThat(state.committed).isEqualTo(state.pending)
+        assertThat(state.previewEnabled).isFalse()
+    }
+
+    @Test
+    fun `changing a control applies it straight away`() = runTest(dispatcher) {
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.setAccent(Accent.TERTIARY)
+        advanceUntilIdle()
+        assertThat(vm.state.value.committed!!.accent).isEqualTo(Accent.TERTIARY)
+        assertThat(vm.state.value.committedPalette).isEqualTo(vm.state.value.pendingPalette)
+    }
+
+    @Test
+    fun `nothing is applied while icons are loading`() = runTest(dispatcher) {
+        val vm = viewModel()
+        assertThat(vm.state.value.committed).isNull()
+        assertThat(vm.state.value.exportEnabled).isFalse()
+        assertThat(vm.defaultExportOptions()).isNull()
     }
 
     @Test
@@ -262,11 +282,6 @@ class MainViewModelTest {
         advanceUntilIdle()
         val (alpha, beta) = vm.state.value.items
 
-        // No editor before a Preview.
-        vm.openEditor(alpha.app.key)
-        assertThat(vm.state.value.editorTarget).isNull()
-
-        vm.preview()
         vm.onLongPress(alpha)
         assertThat(vm.state.value.canEditSelection).isTrue()
         vm.toggleSelection(beta)
@@ -356,6 +371,36 @@ class MainViewModelTest {
         vm.setFilter(GridFilter.ALL)
         vm.selectAll()
         assertThat(vm.state.value.selected).hasSize(vm.state.value.items.count { it.glyph != null })
+    }
+
+    @Test
+    fun `search filters the grid by app or package name`() = runTest(dispatcher) {
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.setQuery("gam")
+        assertThat(vm.state.value.visibleItems.map { it.app.label }).containsExactly("Gamma")
+        vm.setQuery(vm.state.value.items[1].app.packageName.uppercase())
+        assertThat(vm.state.value.visibleItems.map { it.app.label }).containsExactly("Beta")
+        vm.setQuery("zzz")
+        assertThat(vm.state.value.visibleItems).isEmpty()
+        vm.setQuery("")
+        assertThat(vm.state.value.visibleItems).hasSize(3)
+    }
+
+    @Test
+    fun `updating the edited pack installs it when saved, a new name doesn't`() = runTest(dispatcher) {
+        val vm = viewModel()
+        advanceUntilIdle()
+        vm.editPack(PackToEdit("My pack", setOf(IconStyle.LIGHT, IconStyle.DARK)), null)
+        advanceUntilIdle()
+        vm.export(ExportOptions("my  pack", setOf(IconStyle.LIGHT, IconStyle.DARK), target = ExportTarget.ICON_PACK))
+        advanceUntilIdle()
+        assertThat(vm.state.value.installWhenDone).isTrue()
+        vm.dismissExport()
+        assertThat(vm.state.value.installWhenDone).isFalse()
+        vm.export(ExportOptions("Another pack", setOf(IconStyle.LIGHT, IconStyle.DARK), target = ExportTarget.ICON_PACK))
+        advanceUntilIdle()
+        assertThat(vm.state.value.installWhenDone).isFalse()
     }
 
     @Test
@@ -492,13 +537,11 @@ class MainViewModelTest {
     }
 
     @Test
-    fun `export needs a preview and exports every launcher entry with edits applied`() = runTest(dispatcher) {
+    fun `export exports every launcher entry with edits applied`() = runTest(dispatcher) {
         val vm = viewModel()
         advanceUntilIdle()
-        assertThat(vm.state.value.exportEnabled).isFalse()
-        assertThat(vm.defaultExportOptions()).isNull()
+        assertThat(vm.state.value.exportEnabled).isTrue()
 
-        vm.preview()
         val beta = vm.state.value.items[1]
         vm.saveEdit(beta.app.key, IconEdit(IconStyle.LIGHT, contrast = 60, autoNight = false))
         val options = vm.defaultExportOptions()!!
@@ -620,6 +663,28 @@ class MainViewModelTest {
         assertThat(record.style).isEqualTo(IconStyle.DARK)
         assertThat(record.plate).isEqualTo(dark.background)
         assertThat(record.packageName).isEqualTo(request.packageName)
+        assertThat(record.selection).isEqualTo(vm.state.value.committed)
+    }
+
+    @Test
+    fun `edit icon pack starts from the pack's colours, previews, and keeps its name`() = runTest(dispatcher) {
+        val vm = viewModel()
+        advanceUntilIdle()
+        val green = Selection(IconStyle.LIGHT, Accent.TERTIARY, ColorSource.CUSTOM, SeedPresets.AOSP[3])
+        vm.editPack(PackToEdit("My pack", setOf(IconStyle.DARK)), green)
+        advanceUntilIdle()
+
+        val s = vm.state.value
+        assertThat(s.editing).isEqualTo(PackToEdit("My pack", setOf(IconStyle.DARK)))
+        assertThat(s.committed).isEqualTo(green)
+        assertThat(s.committedPalette).isEqualTo(SeedPresets.AOSP[3].palettes()[Accent.TERTIARY]!![IconStyle.LIGHT])
+        val options = vm.defaultExportOptions()!!
+        assertThat(options.pack).isEqualTo(PackToEdit("My pack", setOf(IconStyle.DARK)))
+        assertThat(options.target).isEqualTo(ExportTarget.ICON_PACK)
+
+        vm.stopEditing()
+        assertThat(vm.state.value.editing).isNull()
+        assertThat(vm.defaultExportOptions()!!.pack).isNull()
     }
 
     @Test

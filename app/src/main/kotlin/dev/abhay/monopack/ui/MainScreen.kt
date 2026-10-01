@@ -20,11 +20,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -32,25 +35,36 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import dev.abhay.monopack.hyperos.ThemeApplier
+import dev.abhay.monopack.export.ExportState
 import dev.abhay.monopack.hyperos.ApplyTheme
+import dev.abhay.monopack.hyperos.ThemeApplier
 import dev.abhay.monopack.library.PackNameWarning
 import dev.abhay.monopack.model.ColorSource
 import dev.abhay.monopack.model.GlyphSource
@@ -62,8 +76,8 @@ fun MainScreen(
     viewModel: MainViewModel = viewModel(factory = MainViewModel.Factory),
     /** Back to the library (home). */
     onBack: () -> Unit = {},
-    /** Shows the library folder in a file manager (to install a pack). */
-    onOpenFolder: () -> Boolean = { false },
+    /** Installs a finished icon pack. */
+    installPack: InstallPack = InstallPack {},
     /** Apply icons, with the first-time explanation and the file-name toast. */
     applyTheme: ApplyTheme = ApplyTheme {},
     /** Same-name warning for icon packs, from the library. */
@@ -84,6 +98,15 @@ fun MainScreen(
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.onResume() }
 
+    var searching by rememberSaveable { mutableStateOf(state.query.isNotEmpty()) }
+    val searchFocus = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    fun closeSearch() {
+        searching = false
+        viewModel.setQuery("")
+    }
+    BackHandler(enabled = searching && !state.selecting && state.editorTarget == null) { closeSearch() }
+
     Box(Modifier.fillMaxSize()) {
         Scaffold(
             topBar = {
@@ -103,19 +126,61 @@ fun MainScreen(
                             },
                             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
                         )
+                    } else if (searching) {
+                        TopAppBar(
+                            title = {
+                                TextField(
+                                    value = state.query,
+                                    onValueChange = viewModel::setQuery,
+                                    placeholder = { Text("Search apps") },
+                                    singleLine = true,
+                                    colors = TextFieldDefaults.colors(
+                                        focusedContainerColor = Color.Transparent,
+                                        unfocusedContainerColor = Color.Transparent,
+                                        focusedIndicatorColor = Color.Transparent,
+                                        unfocusedIndicatorColor = Color.Transparent,
+                                    ),
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                                    keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+                                    modifier = Modifier.fillMaxWidth().focusRequester(searchFocus),
+                                )
+                                LaunchedEffect(Unit) { searchFocus.requestFocus() }
+                            },
+                            navigationIcon = { TooltipIconButton(Icons.Filled.Close, "Close search", ::closeSearch) },
+                            actions = {
+                                if (state.query.isNotEmpty()) TooltipIconButton(Symbols.Clear, "Clear", { viewModel.setQuery("") })
+                            },
+                        )
                     } else {
                         TopAppBar(
-                            title = { Text("Create") },
+                            title = {
+                                val editing = state.editing
+                                if (editing == null) {
+                                    Text("Create")
+                                } else {
+                                    Column {
+                                        Text("Edit icon pack")
+                                        Text(
+                                            editing.name,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                            },
                             navigationIcon = {
                                 TooltipIconButton(Icons.AutoMirrored.Filled.ArrowBack, "Back", onBack)
                             },
                             actions = {
+                                TooltipIconButton(Icons.Filled.Search, "Search", { searching = true })
                                 TooltipIconButton(Icons.Filled.Refresh, "Refresh", viewModel::refresh, enabled = state.iconsReady)
                                 Button(
                                     onClick = { exportOptions = viewModel.defaultExportOptions() },
                                     enabled = state.exportEnabled,
                                     modifier = Modifier.padding(end = 8.dp),
-                                ) { Text("Export") }
+                                ) { Text(if (state.editing != null) "Update" else "Export") }
                             },
                         )
                     }
@@ -134,7 +199,6 @@ fun MainScreen(
                     onAccentChange = viewModel::setAccent,
                     onSourceChange = viewModel::setColorSource,
                     onSeedChange = viewModel::setSeed,
-                    onPreview = viewModel::preview,
                     iconShape = iconShape,
                     onIconShape = onIconShape,
                     collapseRequests = collapseRequests,
@@ -176,21 +240,22 @@ fun MainScreen(
                             expandRequests++
                         },
                         onDismissDefaultPaletteBanner = viewModel::dismissDefaultPaletteBanner,
+                        emptyMessage = if (state.query.isNotBlank() && state.visibleItems.isEmpty()) "No apps match \"${state.query.trim()}\"" else null,
                     ),
                     contentPadding = padding,
                     selected = state.selected,
-                    // Tapping an app edits its icon (once a Preview has set the colours).
+                    // Tapping an app edits its icon (once the icons are ready and coloured).
                     onItemClick = { item ->
                         when {
                             state.selecting -> viewModel.toggleSelection(item)
-                            !previewed -> Toast.makeText(context, "Tap Preview first to edit icons", Toast.LENGTH_SHORT).show()
+                            !previewed -> Toast.makeText(context, "Icons are still loading", Toast.LENGTH_SHORT).show()
                             item.glyph == null -> Toast.makeText(context, "No icon to edit yet", Toast.LENGTH_SHORT).show()
                             else -> viewModel.openEditor(item.app.key)
                         }
                     },
                     // Selecting only makes sense once the themed icons are shown.
                     onItemLongClick = { item ->
-                        if (previewed) viewModel.onLongPress(item) else Toast.makeText(context, "Tap Preview first to select icons", Toast.LENGTH_SHORT).show()
+                        if (previewed) viewModel.onLongPress(item) else Toast.makeText(context, "Icons are still loading", Toast.LENGTH_SHORT).show()
                     },
                     // Scrolling the icons collapses the control panel.
                     onUserScroll = { collapseRequests++ },
@@ -240,12 +305,13 @@ fun MainScreen(
         )
     }
     ExportDialogs(
-        state = state.export,
+        // Updating an edited pack installs it right away instead of showing the result.
+        state = if (state.installWhenDone && state.export is ExportState.Done) ExportState.Idle else state.export,
         onCancel = viewModel::cancelExport,
         onDismiss = viewModel::dismissExport,
         onSaveCopy = viewModel::saveCopy,
         onApplied = viewModel::onThemeApplied,
-        onOpenFolder = onOpenFolder,
+        installPack = installPack,
         applyTheme = applyTheme,
         onHide = viewModel::hideExportDialog,
         dialogHidden = state.exportDialogHidden,

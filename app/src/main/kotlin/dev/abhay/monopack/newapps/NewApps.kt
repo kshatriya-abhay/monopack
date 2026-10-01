@@ -12,7 +12,7 @@ data class InstalledApp(
 data class WatchablePack(val packageName: String, val label: String)
 
 /** The watched icon pack: its name, when it was installed or updated, and what it covers. */
-data class CoveringPack(val label: String, val updatedAt: Long, val components: Set<String>)
+data class CoveringPack(val label: String, val updatedAt: Long, val components: Set<String>, val packageName: String = "")
 
 /**
  * Finding apps installed after the current icon pack was made, which the pack has no icon for

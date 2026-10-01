@@ -9,6 +9,7 @@ import dev.abhay.monopack.library.ExportRecord
 import dev.abhay.monopack.library.LibraryStore
 import dev.abhay.monopack.model.IconPalette
 import dev.abhay.monopack.model.IconStyle
+import dev.abhay.monopack.model.Selection
 import dev.abhay.monopack.render.IconShape
 import java.io.File
 import kotlinx.coroutines.CancellationException
@@ -80,7 +81,8 @@ sealed interface ExportJob {
         override val kind get() = ExportKind.THEME
     }
 
-    data class Pack(val request: PackRequest) : ExportJob {
+    /** An icon pack; [selection] is recorded so the pack can be edited and rebuilt. */
+    data class Pack(val request: PackRequest, val selection: Selection? = null) : ExportJob {
         override val kind get() = ExportKind.ICON_PACK
     }
 }
@@ -180,6 +182,7 @@ class ExportRunner(
                 saved.name, ExportKind.ICON_PACK, request.name, request.style, System.currentTimeMillis(), request.apps.size,
                 request.iconPalette.background, request.iconPalette.foreground, request.packageName, request.versionCode,
                 shape = runCatching { library.loadIconShape() }.getOrNull() ?: IconShape.DEFAULT.name,
+                selection = work.selection,
             ),
         )
         val exported = ExportedFile(ExportKind.ICON_PACK, request.style, request.name, saved.name, saved.displayPath, saved.uri, saved.absolutePath, file.path, request.apps.size)

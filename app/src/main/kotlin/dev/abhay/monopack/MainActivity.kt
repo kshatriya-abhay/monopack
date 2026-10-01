@@ -10,8 +10,8 @@ import dev.abhay.monopack.ui.AppRoot
 import dev.abhay.monopack.ui.theme.MonopackTheme
 
 class MainActivity : ComponentActivity() {
-    /** Set by the new-app notification: open + Create (the grid) instead of the home screen. */
-    private val openCreate = mutableStateOf(false)
+    /** Set by the new-app notification: the icon pack to update (package, label). */
+    private val updatePack = mutableStateOf<Pair<String, String?>?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -19,7 +19,7 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) handle(intent)
         setContent {
             MonopackTheme {
-                AppRoot(openCreate = openCreate.value, onOpenedCreate = { openCreate.value = false })
+                AppRoot(updatePack = updatePack.value, onUpdatePackHandled = { updatePack.value = null })
             }
         }
     }
@@ -30,10 +30,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handle(intent: Intent?) {
-        if (intent?.getBooleanExtra(EXTRA_OPEN_CREATE, false) == true) openCreate.value = true
+        val pkg = intent?.getStringExtra(EXTRA_UPDATE_PACK) ?: return
+        updatePack.value = pkg to intent.getStringExtra(EXTRA_UPDATE_PACK_LABEL)
     }
 
     companion object {
-        const val EXTRA_OPEN_CREATE = "dev.abhay.monopack.OPEN_CREATE"
+        const val EXTRA_UPDATE_PACK = "dev.abhay.monopack.UPDATE_PACK"
+        const val EXTRA_UPDATE_PACK_LABEL = "dev.abhay.monopack.UPDATE_PACK_LABEL"
     }
 }

@@ -1,7 +1,5 @@
 package dev.abhay.monopack.ui
 
-import android.app.DownloadManager
-import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -31,6 +29,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
+import dev.abhay.monopack.export.PackToInstall
+import dev.abhay.monopack.iconpack.PackNaming
 import dev.abhay.monopack.export.DownloadsSaver
 import dev.abhay.monopack.export.ExportKind
 import dev.abhay.monopack.export.ExportState
@@ -53,8 +53,8 @@ fun ExportDialogs(
     /** Hides the progress dialog; the export continues with its notification. */
     onHide: () -> Unit = {},
     dialogHidden: Boolean = false,
-    /** Shows the library folder in a file manager (to install a pack); false if nothing could. */
-    onOpenFolder: () -> Boolean = { false },
+    /** Installs a finished icon pack. */
+    installPack: InstallPack = InstallPack {},
     applyTheme: ApplyTheme = ApplyTheme {},
 ) {
     val context = LocalContext.current
@@ -145,11 +145,8 @@ fun ExportDialogs(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (file.kind == ExportKind.ICON_PACK) {
                             Button(onClick = {
-                                val opened = onOpenFolder() || runCatching {
-                                    context.startActivity(Intent(DownloadManager.ACTION_VIEW_DOWNLOADS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                                }.isSuccess
-                                if (!opened) Toast.makeText(context, "No file manager found", Toast.LENGTH_SHORT).show()
-                            }) { Text("Open folder") }
+                                installPack(PackToInstall(file.uri, file.title, PackNaming.packageFor(file.title)))
+                            }) { Text("Install") }
                         } else {
                             Button(onClick = {
                                 if (file.absolutePath.isEmpty()) {

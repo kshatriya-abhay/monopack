@@ -7,6 +7,7 @@ import dev.abhay.monopack.model.IconEdit
 import dev.abhay.monopack.model.IconPalette
 import dev.abhay.monopack.model.IconStyle
 import dev.abhay.monopack.model.LauncherApp
+import dev.abhay.monopack.model.Selection
 import dev.abhay.monopack.palette.IconEdits
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -34,6 +35,7 @@ object ExportJobs {
         pairs: Map<IconStyle, IconPalette>,
         previewStyle: IconStyle,
         now: LocalDateTime,
+        selection: Selection? = null,
     ): ExportJob.Pack {
         val bothModes = styles.containsAll(IconStyle.entries)
         val style = if (bothModes) IconStyle.LIGHT else styles.singleOrNull() ?: previewStyle
@@ -57,6 +59,7 @@ object ExportJobs {
                 iconPalette = pairs.getValue(if (bothModes) previewStyle else style),
                 style = if (bothModes) null else style,
             ),
+            selection,
         )
     }
 

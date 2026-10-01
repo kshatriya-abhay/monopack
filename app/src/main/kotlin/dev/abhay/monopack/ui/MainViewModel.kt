@@ -9,6 +9,7 @@ import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.AP
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import dev.abhay.monopack.iconpack.PackNaming
 import dev.abhay.monopack.appContainer
 import dev.abhay.monopack.apps.AppSource
 import dev.abhay.monopack.data.LastTheme
@@ -57,6 +58,9 @@ fun IconStyle.opposite(): IconStyle = if (this == IconStyle.LIGHT) IconStyle.DAR
 enum class ExportTarget { ICON_PACK, HYPEROS }
 
 /** What the user chose in the export sheet. */
+/** An icon pack being edited: re-exporting with its [name] replaces it. */
+data class PackToEdit(val name: String, val styles: Set<IconStyle>)
+
 data class ExportOptions(
     /** Theme or pack name without a style suffix, e.g. "Monopack · Blue". */
     val name: String,
@@ -65,6 +69,8 @@ data class ExportOptions(
     /** Include apps whose glyph was generated (off: only apps with their own monochrome icon). */
     val includeGenerated: Boolean = true,
     val target: ExportTarget = ExportTarget.ICON_PACK,
+    /** When editing a pack: its exact name and styles, to start the sheet from. */
+    val pack: PackToEdit? = null,
 )
 
 /** Which apps the grid shows. */
@@ -89,6 +95,8 @@ data class UiState(
     /** Colors captured when Preview was tapped, so later palette changes don't alter the grid. */
     val committedPalette: IconPalette? = null,
     val filter: GridFilter = GridFilter.ALL,
+    /** Search text for the grid (app names and package names); empty shows everything. */
+    val query: String = "",
     /**
      * Colours of the committed selection in the *other* icon style, so edited apps can use either
      * style's pair ([committedPairs]).
@@ -98,6 +106,10 @@ data class UiState(
     val edits: Map<String, IconEdit> = emptyMap(),
     /** The app whose icon is open in the icon editor, or null. */
     val editorTarget: String? = null,
+    /** The icon pack being edited (Edit icon pack), or null when making a new one. */
+    val editing: PackToEdit? = null,
+    /** The running export updates the edited pack: install it when it's saved. */
+    val installWhenDone: Boolean = false,
     /** Apps selected with long-press; non-empty means selection mode. */
     val selected: Set<String> = emptySet(),
     val export: ExportState = ExportState.Idle,
@@ -146,11 +158,15 @@ data class UiState(
     val editedCount: Int get() = items.count { it.app.key in edits }
 
     val visibleItems: List<DrawerItem>
-        get() = when (filter) {
-            GridFilter.ALL -> items
-            GridFilter.NATIVE -> items.filter { it.glyph?.source == GlyphSource.NATIVE_MONO }
-            GridFilter.GENERATED -> items.filter { it.glyph != null && it.glyph.source != GlyphSource.NATIVE_MONO }
-            GridFilter.EDITED -> items.filter { it.app.key in edits }
+        get() {
+            val filtered = when (filter) {
+                GridFilter.ALL -> items
+                GridFilter.NATIVE -> items.filter { it.glyph?.source == GlyphSource.NATIVE_MONO }
+                GridFilter.GENERATED -> items.filter { it.glyph != null && it.glyph.source != GlyphSource.NATIVE_MONO }
+                GridFilter.EDITED -> items.filter { it.app.key in edits }
+            }
+            val q = query.trim()
+            return if (q.isEmpty()) filtered else filtered.filter { it.app.label.contains(q, ignoreCase = true) || it.app.packageName.contains(q, ignoreCase = true) }
         }
 }
 
@@ -200,6 +216,8 @@ class MainViewModel(
     private val editsRestored = CompletableDeferred<Unit>()
 
     init {
+        // Every change in the controls applies straight away (once the icons are ready).
+        viewModelScope.launch { _state.collect { if (it.previewEnabled) preview() } }
         viewModelScope.launch { restore() }
         viewModelScope.launch { restoreEdits() }
         viewModelScope.launch { restoreLastTheme() }
@@ -294,6 +312,10 @@ class MainViewModel(
         )
     }
 
+    /**
+     * Shows the controls' selection in the grid (the colours are captured now, so later palette
+     * changes don't alter it). Runs by itself whenever the selection changes and icons are ready.
+     */
     fun preview() = edit {
         if (!it.previewEnabled) {
             it
@@ -308,6 +330,29 @@ class MainViewModel(
 
     fun setFilter(filter: GridFilter) = _state.update { it.copy(filter = filter) }
 
+    fun setQuery(query: String) = _state.update { it.copy(query = query) }
+
+    /**
+     * Edit icon pack: starts from the colours [pack] was made with ([selection], when recorded) and
+     * the current icon edits (applied to the grid as soon as the icons are ready).
+     */
+    fun editPack(pack: PackToEdit, selection: Selection?) {
+        edit { s ->
+            val base = s.copy(editing = pack, selected = emptySet(), editorTarget = null)
+            when {
+                selection == null -> base
+                selection.source == ColorSource.CUSTOM -> base.copy(
+                    pending = selection,
+                    customPalettes = if (selection.seed == s.pending.seed && s.customPalettes.isNotEmpty()) s.customPalettes else selection.seed.palettes(),
+                )
+                else -> base.copy(pending = selection)
+            }
+        }
+    }
+
+    /** Leaves Edit icon pack (back, or + Create for a new pack). */
+    fun stopEditing() = _state.update { it.copy(editing = null) }
+
     fun dismissDefaultPaletteBanner() = _state.update { it.copy(defaultPaletteBannerDismissed = true) }
 
     private var lastTarget: ExportTarget? = null
@@ -315,6 +360,10 @@ class MainViewModel(
     /** Default export options for the export sheet, from the previewed selection. */
     fun defaultExportOptions(): ExportOptions? {
         val committed = _state.value.committed ?: return null
+        val editing = _state.value.editing
+        if (editing != null) {
+            return ExportOptions(name = exportName(committed), styles = setOf(committed.style), target = ExportTarget.ICON_PACK, pack = editing)
+        }
         val target = lastTarget ?: ExportTarget.ICON_PACK
         return ExportOptions(name = exportName(committed), styles = setOf(committed.style), target = target)
     }
@@ -329,6 +378,10 @@ class MainViewModel(
         val committed = s.committed ?: return
         if (s.committedPalette == null) return
         lastTarget = options.target
+        val editing = s.editing
+        val updatesEditedPack = editing != null && options.target == ExportTarget.ICON_PACK &&
+            PackNaming.normalize(options.name) == PackNaming.normalize(editing.name)
+        _state.update { it.copy(installWhenDone = updatesEditedPack) }
         viewModelScope.launch { runCatching { store.saveExportTarget(options.target.name) } }
         val pairs = s.committedPairs
         val entries = s.items.filter {
@@ -342,7 +395,7 @@ class MainViewModel(
                 if (options.styles.isEmpty()) return
                 ExportJobs.themes(name, options.styles, apps, s.edits, pairs, preferredStyle = committed.style, now = now)
             }
-            ExportTarget.ICON_PACK -> ExportJobs.pack(name, options.styles, apps, s.edits, pairs, previewStyle = committed.style, now = now)
+            ExportTarget.ICON_PACK -> ExportJobs.pack(name, options.styles, apps, s.edits, pairs, previewStyle = committed.style, now = now, selection = committed)
         }
         runner.start(job)
     }
@@ -362,7 +415,10 @@ class MainViewModel(
     /** Hides the progress dialog; the export continues in the background with its notification. */
     fun hideExportDialog() = _state.update { it.copy(exportDialogHidden = true) }
 
-    fun dismissExport() = runner.dismiss()
+    fun dismissExport() {
+        _state.update { it.copy(installWhenDone = false) }
+        runner.dismiss()
+    }
 
     /** Apply icons was tapped for [file]: it becomes the theme Reapply uses. */
     fun onThemeApplied(file: ExportedFile) {

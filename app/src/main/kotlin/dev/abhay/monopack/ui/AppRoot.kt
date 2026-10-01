@@ -10,17 +10,26 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import dev.abhay.monopack.appContainer
+import dev.abhay.monopack.export.ExportKind
+import dev.abhay.monopack.export.ExportState
+import dev.abhay.monopack.export.PackToInstall
+import dev.abhay.monopack.hyperos.rememberApplyThemeFlow
+import dev.abhay.monopack.iconpack.PackNaming
+import dev.abhay.monopack.library.InstallPermissionStep
 import dev.abhay.monopack.library.LibraryScreen
 import dev.abhay.monopack.library.LibraryViewModel
 import dev.abhay.monopack.library.OnboardingScreen
-import dev.abhay.monopack.hyperos.rememberApplyThemeFlow
+import dev.abhay.monopack.model.IconStyle
 import dev.abhay.monopack.render.LocalIconShape
 import dev.abhay.monopack.settings.SettingsScreen
 
@@ -33,9 +42,9 @@ private enum class Screen { LIBRARY, CREATE, SETTINGS }
  */
 @Composable
 fun AppRoot(
-    /** Open + Create (from the new-app notification); [onOpenedCreate] is called once it's shown. */
-    openCreate: Boolean = false,
-    onOpenedCreate: () -> Unit = {},
+    /** An icon pack to update (package, label), from the new-app notification; handled once. */
+    updatePack: Pair<String, String?>? = null,
+    onUpdatePackHandled: () -> Unit = {},
     library: LibraryViewModel = viewModel(factory = LibraryViewModel.Factory),
     // Created up front (activity-scoped), so apps and icons load while the home screen is showing
     // and + Create opens straight onto a ready grid.
@@ -46,14 +55,44 @@ fun AppRoot(
     val changeFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         uri?.let { library.onFolderPicked(it.toString()) }
     }
+    val context = LocalContext.current
+    val installer = context.appContainer.packInstaller
+    val installPack = rememberInstallPackFlow(installer, onInstalled = library::refresh)
+    // Re-checked on resume: the user may have just allowed installs in Settings.
+    var canInstall by remember { mutableStateOf(installer.canInstall()) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        canInstall = installer.canInstall()
+        if (canInstall && !state.installStepDone && !state.loading) library.finishInstallStep()
+    }
     val applyTheme = rememberApplyThemeFlow(state.folderLabel, state.applyHintDismissed, library::dismissApplyHint)
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { library.refresh() }
     LaunchedEffect(screen) { if (screen == Screen.LIBRARY) library.refresh() }
-    LaunchedEffect(openCreate) {
-        if (openCreate) {
-            screen = Screen.CREATE
-            onOpenedCreate()
+
+    /** Opens Edit icon pack for an installed pack (by package), or + Create if it isn't in the library. */
+    fun editInstalledPack(packageName: String, label: String?) {
+        val item = state.packItem(packageName)
+        when {
+            item != null -> create.editPack(PackToEdit(item.title, item.packStyles), item.selection)
+            label != null -> create.editPack(PackToEdit(label, IconStyle.entries.toSet()), null)
+            else -> create.stopEditing()
         }
+        screen = Screen.CREATE
+    }
+    LaunchedEffect(updatePack, state.loading) {
+        val (pkg, label) = updatePack ?: return@LaunchedEffect
+        if (state.loading) return@LaunchedEffect
+        editInstalledPack(pkg, label)
+        onUpdatePackHandled()
+    }
+
+    // Update in Edit icon pack installs the rebuilt pack as soon as it's saved.
+    val createState by create.state.collectAsStateWithLifecycle()
+    LaunchedEffect(createState.export, createState.installWhenDone) {
+        val done = createState.export as? ExportState.Done ?: return@LaunchedEffect
+        if (!createState.installWhenDone) return@LaunchedEffect
+        val file = done.files.singleOrNull { it.kind == ExportKind.ICON_PACK }
+        create.dismissExport()
+        if (file != null) installPack(PackToInstall(file.uri, file.title, PackNaming.packageFor(file.title)))
     }
 
     CompositionLocalProvider(LocalIconShape provides state.iconShape.shape) {
@@ -64,11 +103,18 @@ fun AppRoot(
                 error = state.error,
                 onFolderPicked = { library.onFolderPicked(it.toString()) },
             )
+            !state.installStepDone && !canInstall -> InstallPermissionStep(
+                onAllow = { runCatching { context.startActivity(installer.permissionIntent()) } },
+                onSkip = library::finishInstallStep,
+            )
             screen == Screen.SETTINGS -> {
                 BackHandler { screen = Screen.LIBRARY }
                 SettingsScreen(
                     applyHintDismissed = state.applyHintDismissed,
                     onChangeFolder = { changeFolder.launch(null) },
+                    onOpenFolder = library::openFolder,
+                    canInstall = canInstall,
+                    onAllowInstalls = { runCatching { context.startActivity(installer.permissionIntent()) } },
                     onResetApplyHint = library::resetApplyHint,
                     newAppAlerts = state.newAppAlerts,
                     onNewAppAlerts = library::setNewAppAlerts,
@@ -79,11 +125,15 @@ fun AppRoot(
                 )
             }
             screen == Screen.CREATE -> {
-                BackHandler { screen = Screen.LIBRARY }
+                val leave = {
+                    create.stopEditing()
+                    screen = Screen.LIBRARY
+                }
+                BackHandler { leave() }
                 MainScreen(
                     viewModel = create,
-                    onBack = { screen = Screen.LIBRARY },
-                    onOpenFolder = library::openFolder,
+                    onBack = leave,
+                    installPack = installPack,
                     applyTheme = applyTheme,
                     packNameWarning = library::packNameWarning,
                     iconShape = state.iconShape,
@@ -92,16 +142,24 @@ fun AppRoot(
             }
             else -> LibraryScreen(
                 state = state,
-                onCreate = { screen = Screen.CREATE },
+                onCreate = {
+                    create.stopEditing()
+                    screen = Screen.CREATE
+                },
+                onEditPack = { item ->
+                    create.editPack(PackToEdit(item.title, item.packStyles), item.selection)
+                    screen = Screen.CREATE
+                },
                 onToggle = library::toggleSelection,
                 onClearSelection = library::clearSelection,
                 onDeleteSelected = library::deleteSelected,
                 onRemoveMissing = library::removeMissing,
                 onApplied = library::onApplied,
-                onOpenFolder = library::openFolder,
                 onSettings = { screen = Screen.SETTINGS },
                 applyTheme = applyTheme,
                 onDismissNewApps = library::dismissNewApps,
+                onUpdateNewApps = { found -> editInstalledPack(found.packageName, found.packLabel) },
+                installPack = installPack,
                 onSelectAll = library::selectAll,
             )
         }

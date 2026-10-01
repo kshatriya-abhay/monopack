@@ -194,6 +194,17 @@ class LibraryViewModelTest {
     }
 
     @Test
+    fun `a library pack is found by its package, recorded or from its name`() {
+        fun item(title: String, pkg: String?) = LibraryItem("$title.apk", ExportKind.ICON_PACK, title, null, 1, 1, null, null, pkg, null, pkg != null)
+        val recorded = item("Blue", "p.recorded")
+        val found = item("Monopack · Green", null)
+        val state = LibraryState(items = listOf(recorded, found))
+        assertThat(state.packItem("p.recorded")).isEqualTo(recorded)
+        assertThat(state.packItem(PackNaming.packageFor("Monopack · Green"))).isEqualTo(found)
+        assertThat(state.packItem("p.none")).isNull()
+    }
+
+    @Test
     fun `the watched pack is the picked one, or the only one installed`() {
         val one = WatchablePack("p.one", "Monopack")
         val two = WatchablePack("p.two", "Monopack · Dark")

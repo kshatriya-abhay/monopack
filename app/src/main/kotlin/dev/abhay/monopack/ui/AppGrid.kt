@@ -66,14 +66,14 @@ import kotlin.math.abs
 const val GRID_COLUMNS = 5
 
 /**
- * The 5-column drawer. Before the first Preview ([colorsFor] returns null) it shows the original
+ * The 5-column drawer. Until the icons are ready ([colorsFor] returns null) it shows the original
  * icons; afterwards every app is drawn as a themed icon in its own (possibly edited) colours.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AppGrid(
     items: List<DrawerItem>,
-    /** Colours for each app (edits applied); null before the first Preview, which shows originals. */
+    /** Colours for each app (edits applied); null while loading, which shows originals. */
     colorsFor: (DrawerItem) -> IconColors?,
     /** Glyph contrast edit (0..100) per item. */
     contrastFor: (DrawerItem) -> Int = { 0 },
@@ -135,6 +135,17 @@ fun AppGrid(
         }
         if (header.showCountsReady) {
             item(key = "filter", span = { GridItemSpan(maxLineSpan) }) { FilterRow(header) }
+        }
+        header.emptyMessage?.let { message ->
+            item(key = "empty", span = { GridItemSpan(maxLineSpan) }) {
+                Text(
+                    message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(24.dp),
+                )
+            }
         }
         items(items, key = { it.app.key }) { item ->
             Column(
@@ -220,7 +231,7 @@ private fun SelectedMark(modifier: Modifier) {
 
 /** Content shown above the icons. */
 data class GridHeader(
-    /** A Preview has been made, so themed icons are shown. */
+    /** Themed icons are shown (the colours have been applied). */
     val previewed: Boolean,
     val filter: GridFilter,
     val counts: Map<GridFilter, Int>,
@@ -229,6 +240,8 @@ data class GridHeader(
     val onFilterChange: (GridFilter) -> Unit,
     val onUseCustomColours: () -> Unit,
     val onDismissDefaultPaletteBanner: () -> Unit = {},
+    /** Shown when nothing matches the search, e.g. "No apps match \"xyz\"". */
+    val emptyMessage: String? = null,
 )
 
 @Composable
@@ -281,7 +294,7 @@ private fun HintCard() {
         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
     ) {
         Text(
-            "Pick an icon style and accent below, then tap Preview.",
+            "Preparing your icons… Pick colours below; changes show straight away.",
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(16.dp),
         )

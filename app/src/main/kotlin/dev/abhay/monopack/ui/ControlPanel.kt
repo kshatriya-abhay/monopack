@@ -78,9 +78,9 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
 /**
- * Bottom panel. The header (drag handle, pending colours, caption, Preview and a chevron) is always
- * visible; the controls below it collapse to leave more room for the icons. Tap or drag the header
- * to toggle; tapping Preview also collapses the panel so the result is visible.
+ * Bottom panel. The header (drag handle, current colours, caption and a chevron) is always visible;
+ * the controls below it collapse to leave more room for the icons. Tap or drag the header to toggle.
+ * Changes apply to the grid straight away.
  */
 @Composable
 fun ControlPanel(
@@ -89,7 +89,6 @@ fun ControlPanel(
     onAccentChange: (Accent) -> Unit,
     onSourceChange: (ColorSource) -> Unit,
     onSeedChange: (Seed) -> Unit,
-    onPreview: () -> Unit,
     /** The icon shape previews use (and the pack is recorded with); launchers apply their own mask. */
     iconShape: IconShape = IconShape.DEFAULT,
     onIconShape: (IconShape) -> Unit = {},
@@ -247,25 +246,6 @@ fun ControlPanel(
 
                     SectionLabel("Icon shape")
                     ShapeRow(selected = iconShape, onSelect = onIconShape)
-                    Spacer(Modifier.height(16.dp))
-
-                    // Preview: at the bottom of the controls, so it collapses with them.
-                    Button(
-                        onClick = {
-                            onPreview()
-                            settle(false)
-                        },
-                        enabled = state.previewEnabled,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .semantics {
-                                if (!state.previewEnabled) {
-                                    stateDescription = if (state.iconsReady) "Already previewing this selection" else "Preparing icons"
-                                }
-                            },
-                    ) {
-                        Text(if (state.iconsReady) "Preview" else "Preparing icons… ${(state.fetchProgress * 100).roundToInt()}%")
-                    }
                 }
             }
         }
@@ -356,8 +336,8 @@ private fun summary(state: UiState): String = if (!state.iconsReady) {
 }
 
 private fun caption(state: UiState): String {
-    val committed = state.committed ?: return "Not previewed yet"
-    return if (state.previewEnabled) "Grid shows ${committed.describe()}" else "Showing ${committed.describe()}"
+    val committed = state.committed ?: return "Preparing icons…"
+    return "Showing ${committed.describe()}"
 }
 
 private fun Selection.describe(): String {
@@ -386,7 +366,7 @@ internal val Accent.label
 
 /**
  * The icon shapes as blank tiles (name in a tooltip). Match your launcher's shape, so previews look
- * like your home screen; applies right away, no Preview needed.
+ * like your home screen; applies right away.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

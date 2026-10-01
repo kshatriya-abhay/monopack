@@ -59,6 +59,8 @@ data class LibraryState(
     val packs: List<WatchablePack> = emptyList(),
     /** The pack the user picked to watch (null: none picked; a single installed pack is used). */
     val watchedPack: String? = null,
+    /** The onboarding's install-permission step was done or skipped. */
+    val installStepDone: Boolean = false,
 ) {
     /** The pack new apps are checked against: the picked one if installed, else the only one. */
     val effectiveWatchedPack: WatchablePack?
@@ -72,11 +74,16 @@ data class LibraryState(
     /** The filesystem path Theme Manager needs, or null (missing file, or a folder off internal storage). */
     fun pathFor(item: LibraryItem): String? = item.file?.documentId?.let(Library::pathFor)
 
+    /** The library's icon pack with [packageName] (recorded, or matched by its name). */
+    fun packItem(packageName: String): LibraryItem? = items.firstOrNull {
+        it.kind == ExportKind.ICON_PACK && (it.packageName ?: PackNaming.packageFor(it.title)) == packageName
+    }
+
     fun isApplied(item: LibraryItem): Boolean = item.kind == ExportKind.THEME && lastTheme != null && pathFor(item) == lastTheme.absolutePath
 }
 
-/** The home screen's new-apps banner: [apps] aren't in the pack [packLabel]. */
-data class NewAppsFound(val packLabel: String, val apps: List<InstalledApp>)
+/** The home screen's new-apps banner: [apps] aren't in the pack [packLabel] ([packageName]). */
+data class NewAppsFound(val packLabel: String, val apps: List<InstalledApp>, val packageName: String = "")
 
 /** The home screen: exported themes and packs in the library folder. */
 class LibraryViewModel(
@@ -116,9 +123,10 @@ class LibraryViewModel(
             val alerts = runCatching { newApps?.loadEnabled() }.getOrNull() ?: false
             val packs = runCatching { listPacks() }.getOrDefault(emptyList())
             val watched = runCatching { newApps?.loadWatchedPack() }.getOrNull()
+            val installStep = runCatching { store.loadInstallStepDone() }.getOrDefault(true)
             val found = runCatching { findNewApps() }.onFailure { Log.w(TAG, "New-app check failed", it) }.getOrNull()
                 ?.takeIf { f -> f.apps.isNotEmpty() && !dismissedNewApps.containsAll(f.apps.map { it.component }) }
-            _state.update { it.copy(applyHintDismissed = hintDismissed, iconShape = shape, newAppAlerts = alerts, newApps = found, packs = packs, watchedPack = watched) }
+            _state.update { it.copy(applyHintDismissed = hintDismissed, iconShape = shape, newAppAlerts = alerts, newApps = found, packs = packs, watchedPack = watched, installStepDone = installStep) }
             if (tree == null || !access) {
                 _state.update { it.copy(loading = false, tree = tree, hasAccess = false, lastTheme = lastTheme, items = emptyList()) }
                 return@launch
@@ -236,6 +244,12 @@ class LibraryViewModel(
         _state.update { it.copy(newApps = null) }
     }
 
+    /** Onboarding: the install-permission step was completed or skipped. */
+    fun finishInstallStep() {
+        _state.update { it.copy(installStepDone = true) }
+        viewModelScope.launch { runCatching { store.saveInstallStepDone() } }
+    }
+
     /** Settings: the icon pack to check new apps against. */
     fun setWatchedPack(packageName: String) {
         _state.update { it.copy(watchedPack = packageName) }
@@ -272,7 +286,7 @@ class LibraryViewModel(
                     container.exportRunner,
                     container.newAppStore,
                     scheduleNewApps = { NewAppJob.sync(app, it) },
-                    findNewApps = { container.newAppCheck.find()?.let { NewAppsFound(it.pack.label, it.uncovered) } },
+                    findNewApps = { container.newAppCheck.find()?.let { NewAppsFound(it.pack.label, it.uncovered, it.pack.packageName) } },
                     listPacks = { container.newAppCheck.packs() },
                 )
             }

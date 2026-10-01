@@ -112,6 +112,25 @@ class SettingsScreenTest {
     }
 
     @Test
+    fun theInstallRowShowsItsStateAndOpensTheSetting() {
+        var asked = false
+        compose.setContent {
+            MonopackTheme {
+                SettingsScreen(
+                    applyHintDismissed = false,
+                    onChangeFolder = {},
+                    onResetApplyHint = {},
+                    onBack = {},
+                    canInstall = false,
+                    onAllowInstalls = { asked = true },
+                )
+            }
+        }
+        compose.onNodeWithText("Not allowed. Tap to allow Monopack to install packs.").performClick()
+        assertThat(asked).isTrue()
+    }
+
+    @Test
     fun creditsListEveryProject() {
         show(hintDismissed = true)
         compose.onNodeWithText("Open-source credits").performScrollTo().performClick()
