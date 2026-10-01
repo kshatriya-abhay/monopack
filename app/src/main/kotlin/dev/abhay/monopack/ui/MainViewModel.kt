@@ -9,9 +9,9 @@ import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.AP
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import dev.abhay.monopack.iconpack.PackNaming
 import dev.abhay.monopack.appContainer
 import dev.abhay.monopack.apps.AppSource
+import dev.abhay.monopack.data.Backup
 import dev.abhay.monopack.data.LastTheme
 import dev.abhay.monopack.data.SavedSelections
 import dev.abhay.monopack.data.SelectionStore
@@ -22,6 +22,7 @@ import dev.abhay.monopack.export.ExportRunner
 import dev.abhay.monopack.export.ExportSaver
 import dev.abhay.monopack.export.ExportState
 import dev.abhay.monopack.export.ExportedFile
+import dev.abhay.monopack.iconpack.PackNaming
 import dev.abhay.monopack.model.Accent
 import dev.abhay.monopack.model.ColorSource
 import dev.abhay.monopack.model.GlyphSource
@@ -337,17 +338,26 @@ class MainViewModel(
      * the current icon edits (applied to the grid as soon as the icons are ready).
      */
     fun editPack(pack: PackToEdit, selection: Selection?) {
-        edit { s ->
-            val base = s.copy(editing = pack, selected = emptySet(), editorTarget = null)
-            when {
-                selection == null -> base
-                selection.source == ColorSource.CUSTOM -> base.copy(
-                    pending = selection,
-                    customPalettes = if (selection.seed == s.pending.seed && s.customPalettes.isNotEmpty()) s.customPalettes else selection.seed.palettes(),
-                )
-                else -> base.copy(pending = selection)
-            }
-        }
+        edit { s -> s.copy(editing = pack, selected = emptySet(), editorTarget = null).withSelection(selection) }
+    }
+
+    /** The controls set to [selection] (custom colours get their palettes); unchanged for null. */
+    private fun UiState.withSelection(selection: Selection?): UiState = when {
+        selection == null -> this
+        selection.source == ColorSource.CUSTOM -> copy(
+            pending = selection,
+            customPalettes = if (selection.seed == pending.seed && customPalettes.isNotEmpty()) customPalettes else selection.seed.palettes(),
+        )
+        else -> copy(pending = selection)
+    }
+
+    /** A backup of the icon edits and the controls' colours ([iconShape] comes from the library). */
+    fun backup(iconShape: String?): Backup = Backup(_state.value.edits, _state.value.pending, iconShape)
+
+    /** Restores [backup]: its edits are merged in (they win), and the controls take its colours. */
+    fun restoreBackup(backup: Backup) {
+        changeEdits { it.copy(edits = it.edits + backup.edits) }
+        edit { it.withSelection(backup.selection) }
     }
 
     /** Leaves Edit icon pack (back, or + Create for a new pack). */

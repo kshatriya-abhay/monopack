@@ -88,7 +88,7 @@ object SeedColors {
 
     fun scheme(seed: Seed): DynamicScheme {
         val source = Hct.fromInt(seed.color)
-        // Spec 2021 matches the palettes Android 15 generates.
+        // Spec 2021 matches the palettes Android 13–15 generate.
         val spec = ColorSpec.SpecVersion.SPEC_2021
         val platform = DynamicScheme.Platform.PHONE
         return when (seed.style) {

@@ -77,6 +77,9 @@ fun SettingsScreen(
     /** Whether Monopack may install packs ("Install unknown apps"), and the way to allow it. */
     canInstall: Boolean = false,
     onAllowInstalls: () -> Unit = {},
+    /** Saves a backup file / restores one (the screens pick the file). */
+    onBackup: () -> Unit = {},
+    onRestore: () -> Unit = {},
     onResetApplyHint: () -> Unit,
     onBack: () -> Unit,
     newAppAlerts: Boolean = false,
@@ -132,6 +135,10 @@ fun SettingsScreen(
                 "Install icon packs",
                 if (canInstall) "Allowed. Packs install in one tap." else "Not allowed. Tap to allow Monopack to install packs.",
             ) { onAllowInstalls() }
+
+            Section("Backup")
+            Item("Back up edits", "Save your icon edits, colours and icon shape to a file") { onBackup() }
+            Item("Restore edits", "Add the icon edits from a backup file; yours for other apps stay") { onRestore() }
 
             Section("New apps")
             SwitchItem(

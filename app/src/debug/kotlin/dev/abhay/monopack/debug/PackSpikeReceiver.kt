@@ -31,11 +31,27 @@ import kotlin.concurrent.thread
  *
  * adb shell am broadcast -n dev.abhay.monopack/.debug.PackSpikeReceiver [--es name "Pack name"]
  * `--ez newApps true` logs what the new-app check would notify about (nothing posted or saved).
+ * `--ez profiles true` logs the launcher apps LauncherApps returns for each profile (work profile check).
  */
 class PackSpikeReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val pending = goAsync()
         val name = intent.getStringExtra("name") ?: "Monopack · Spike"
+        if (intent.getBooleanExtra("profiles", false)) {
+            try {
+                val launcherApps = context.getSystemService(android.content.pm.LauncherApps::class.java)
+                for (user in launcherApps.profiles) {
+                    val list = runCatching { launcherApps.getActivityList(null, user) }
+                    Log.i("HyperProbe", "profile=$user count=${list.getOrNull()?.size} error=${list.exceptionOrNull()}")
+                    list.getOrNull()?.take(400)?.forEach { Log.i("HyperProbe", "  $user ${it.label} ${it.componentName.flattenToShortString()}") }
+                }
+            } catch (e: Exception) {
+                Log.e("HyperProbe", "profiles failed", e)
+            } finally {
+                pending.finish()
+            }
+            return
+        }
         if (intent.getBooleanExtra("newApps", false)) {
             thread {
                 try {

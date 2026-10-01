@@ -404,6 +404,28 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `restoring a backup merges its edits and takes its colours`() = runTest(dispatcher) {
+        val store = FakeStore()
+        val vm = viewModel(store)
+        advanceUntilIdle()
+        val (alpha, beta) = vm.state.value.items.map { it.app.key }
+        vm.saveEdit(alpha, IconEdit(IconStyle.LIGHT, contrast = 10))
+        vm.saveEdit(beta, IconEdit(IconStyle.LIGHT, contrast = 20))
+        val backup = vm.backup("CIRCLE")
+        assertThat(backup.edits.keys).containsExactly(alpha, beta)
+        assertThat(backup.iconShape).isEqualTo("CIRCLE")
+
+        val green = Selection(IconStyle.DARK, Accent.SECONDARY, ColorSource.CUSTOM, SeedPresets.AOSP[3])
+        vm.restoreBackup(dev.abhay.monopack.data.Backup(mapOf(beta to IconEdit(IconStyle.DARK, contrast = 90), "gone/.Main" to IconEdit(IconStyle.DARK)), green, null))
+        advanceUntilIdle()
+        val s = vm.state.value
+        assertThat(s.edits[alpha]!!.contrast).isEqualTo(10)
+        assertThat(s.edits[beta]!!.contrast).isEqualTo(90)
+        assertThat(s.edits).containsKey("gone/.Main")
+        assertThat(s.committed).isEqualTo(green)
+    }
+
+    @Test
     fun `cancel clears the selection`() = runTest(dispatcher) {
         val vm = viewModel()
         advanceUntilIdle()
