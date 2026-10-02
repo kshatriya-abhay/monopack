@@ -114,6 +114,11 @@ fun AppGrid(
     LaunchedEffect(header.showDefaultPaletteBanner) {
         if (header.showDefaultPaletteBanner) gridState.animateScrollToItem(0)
     }
+    // The filter chips appear once icons are ready, above the first app; the grid keeps that app
+    // in view, which hid them. Back to the top unless the user has scrolled down.
+    LaunchedEffect(header.showCountsReady) {
+        if (header.showCountsReady && gridState.firstVisibleItemIndex <= 2) gridState.scrollToItem(0)
+    }
     LazyVerticalGrid(
         columns = GridCells.Fixed(GRID_COLUMNS),
         state = gridState,

@@ -230,7 +230,8 @@ fun MainScreen(
                             GridFilter.GENERATED to state.total - state.count(GlyphSource.NATIVE_MONO),
                             GridFilter.EDITED to state.editedCount,
                         ),
-                        showCountsReady = state.iconsReady,
+                        // Not iconsReady: the rescan on every open would hide and re-show the chips.
+                        showCountsReady = state.total > 0 && state.loaded == state.total,
                         showDefaultPaletteBanner = state.paletteLooksDefault &&
                             state.pending.source == ColorSource.WALLPAPER &&
                             !state.defaultPaletteBannerDismissed,

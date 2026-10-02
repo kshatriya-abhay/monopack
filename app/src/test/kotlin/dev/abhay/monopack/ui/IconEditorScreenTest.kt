@@ -89,6 +89,17 @@ class IconEditorScreenTest {
     }
 
     @Test
+    fun showsAppInfoAtTheEnd() {
+        show()
+        compose.onNodeWithText("com.example.bb").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText(".Main").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Main", useUnmergedTree = true).assertExists()
+        compose.onNodeWithText("Primary", useUnmergedTree = true).assertExists()
+        compose.onNodeWithText("Generated from the coloured icon").performScrollTo().assertIsDisplayed()
+        snapshot("editor-app-info")
+    }
+
+    @Test
     fun savesTheChosenBaseAndTone() {
         show()
         compose.onNodeWithContentDescription("Light mode preview").assertIsDisplayed()

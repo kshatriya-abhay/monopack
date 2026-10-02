@@ -6,8 +6,12 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -86,6 +90,40 @@ class AppGridTest {
     fun noEditsMeansNoChip() {
         show(edited = emptySet())
         compose.onNodeWithText("Edited 0").assertDoesNotExist()
+    }
+
+    @Test
+    fun theFilterChipsStayInViewWhenTheyAppear() {
+        val many = (1..60).map { item("com.app$it", "App $it", GlyphSource.FORCED_MONO) }
+        // Opening Create rescans apps: the chips go while it runs and come back after.
+        var ready by mutableStateOf(true)
+        compose.setContent {
+            MonopackTheme {
+                AppGrid(
+                    items = many,
+                    colorsFor = { colors },
+                    header = GridHeader(
+                        previewed = true,
+                        filter = GridFilter.ALL,
+                        counts = mapOf(GridFilter.ALL to 60, GridFilter.NATIVE to 0, GridFilter.GENERATED to 60, GridFilter.EDITED to 0),
+                        showCountsReady = ready,
+                        showDefaultPaletteBanner = false,
+                        onFilterChange = {},
+                        onUseCustomColours = {},
+                    ),
+                    contentPadding = PaddingValues(),
+                    selected = emptySet(),
+                    onItemClick = {},
+                    onItemLongClick = {},
+                )
+            }
+        }
+        compose.waitForIdle()
+        ready = false
+        compose.waitForIdle()
+        ready = true
+        compose.waitForIdle()
+        compose.onNodeWithText("All 60").assertIsDisplayed()
     }
 
     private fun snapshot(name: String) {

@@ -18,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
@@ -58,7 +59,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.abhay.monopack.glyph.MaskContrast
+import dev.abhay.monopack.model.GlyphSource
 import dev.abhay.monopack.model.IconEdit
+import dev.abhay.monopack.model.IconKind
+import dev.abhay.monopack.model.IconOrigin
 import dev.abhay.monopack.model.IconPalette
 import dev.abhay.monopack.model.IconStyle
 import dev.abhay.monopack.model.LauncherApp
@@ -219,6 +223,8 @@ fun IconEditorScreen(
                 }
                 EditorHint("Follows the global icon style again, with the default colours.", Modifier.padding(top = 6.dp))
             }
+
+            AppInfo(item)
             }
         }
     }
@@ -392,4 +398,59 @@ private fun ToneSlider(label: String, color: Int, offset: Int, allowed: IntRange
         },
     )
     EndLabels("Darker", "Lighter")
+}
+
+/** About the app and its icon: names to copy, its profile, and where the glyph came from. */
+@Composable
+private fun AppInfo(item: DrawerItem) {
+    val app = item.app
+    Spacer(Modifier.height(32.dp))
+    HorizontalDivider()
+    Spacer(Modifier.height(16.dp))
+    Text("App info", style = MaterialTheme.typography.titleSmall)
+    Spacer(Modifier.height(8.dp))
+    SelectionContainer {
+        Column {
+            InfoLine("App", app.label)
+            InfoLine("Package", app.packageName)
+            InfoLine("Activity", app.component.shortClassName)
+        }
+    }
+    InfoLine("Profile", if (app.user == null) "Main" else "Work")
+    InfoLine("Launcher entry", if (app.isMainActivity) "Primary" else "Extra (the app has more than one)")
+    item.info?.let { info ->
+        val kind = if (info.kind == IconKind.ADAPTIVE) "Adaptive" else "Legacy"
+        InfoLine("Icon", if (info.hasMonochrome) "$kind, with a monochrome layer" else kind)
+        InfoLine(
+            "Loaded from",
+            when (info.origin) {
+                IconOrigin.RESOURCES -> "App resources"
+                IconOrigin.PACKAGE_MANAGER -> "Package manager (may be themed)"
+                IconOrigin.DEFAULT -> "System default icon"
+            },
+        )
+    }
+    item.glyph?.let { glyph ->
+        InfoLine(
+            "Glyph",
+            when (glyph.source) {
+                GlyphSource.NATIVE_MONO -> "The app's own monochrome icon"
+                GlyphSource.FORCED_MONO -> "Generated from the coloured icon"
+                GlyphSource.FAILED -> "Couldn't be made (empty plate)"
+            },
+        )
+    }
+}
+
+@Composable
+private fun InfoLine(label: String, value: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(0.35f),
+        )
+        Text(value, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(0.65f))
+    }
 }
