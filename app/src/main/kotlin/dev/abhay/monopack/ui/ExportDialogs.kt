@@ -27,17 +27,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
-import dev.abhay.monopack.export.PackToInstall
-import dev.abhay.monopack.iconpack.PackNaming
+import dev.abhay.monopack.R
 import dev.abhay.monopack.export.DownloadsSaver
 import dev.abhay.monopack.export.ExportKind
 import dev.abhay.monopack.export.ExportState
 import dev.abhay.monopack.export.ExportedFile
 import dev.abhay.monopack.export.LauncherHints
+import dev.abhay.monopack.export.PackToInstall
 import dev.abhay.monopack.hyperos.ApplyTheme
 import dev.abhay.monopack.hyperos.ThemeToApply
+import dev.abhay.monopack.iconpack.PackNaming
 import dev.abhay.monopack.model.IconStyle
 
 /** Progress, result and error UI for exports. */
@@ -58,6 +62,7 @@ fun ExportDialogs(
     applyTheme: ApplyTheme = ApplyTheme {},
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     var saving by remember { mutableStateOf<ExportedFile?>(null) }
     // The MIME type only suggests an extension; the file name decides it.
     val saveAs = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(DownloadsSaver.MIME_TYPE)) { uri ->
@@ -65,7 +70,7 @@ fun ExportDialogs(
         saving = null
         if (uri != null && file != null) {
             onSaveCopy(file, uri.toString()) { ok ->
-                Toast.makeText(context, if (ok) "Saved" else "Couldn't save the file", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, if (ok) resources.getString(R.string.export_saved) else resources.getString(R.string.export_save_failed), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -80,15 +85,15 @@ fun ExportDialogs(
                 title = {
                     Text(
                         when {
-                            pack -> "Building icon pack"
-                            state.files > 1 -> "Exporting theme ${state.file} of ${state.files}"
-                            else -> "Exporting theme"
+                            pack -> stringResource(R.string.export_building_pack)
+                            state.files > 1 -> stringResource(R.string.export_theme_n_of, state.file, state.files)
+                            else -> stringResource(R.string.export_exporting_theme)
                         },
                     )
                 },
                 text = {
                     Column {
-                        Text(if (state.signing) "Building and signing the APK…" else "Rendering ${state.done} of ${state.total} icons…")
+                        Text(if (state.signing) stringResource(R.string.export_signing) else pluralStringResource(R.plurals.export_rendering, state.total, state.done, state.total))
                         Spacer(Modifier.height(12.dp))
                         if (state.signing) {
                             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -99,11 +104,11 @@ fun ExportDialogs(
                             )
                         }
                         Spacer(Modifier.height(12.dp))
-                        Hint("You can leave Monopack: the export continues, with a notification.")
+                        Hint(stringResource(R.string.export_can_leave))
                     }
                 },
-                confirmButton = { TextButton(onClick = onHide) { Text("Hide") } },
-                dismissButton = { TextButton(onClick = onCancel) { Text("Cancel") } },
+                confirmButton = { TextButton(onClick = onHide) { Text(stringResource(R.string.action_hide)) } },
+                dismissButton = { TextButton(onClick = onCancel) { Text(stringResource(R.string.action_cancel)) } },
             )
         }
         is ExportState.Done -> ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -111,33 +116,33 @@ fun ExportDialogs(
             Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
                 Text(
                     when {
-                        pack -> "Icon pack exported"
-                        state.files.size > 1 -> "Themes exported"
-                        else -> "Theme exported"
+                        pack -> stringResource(R.string.export_done_pack)
+                        state.files.size > 1 -> stringResource(R.string.export_done_themes)
+                        else -> stringResource(R.string.export_done_theme)
                     },
                     style = MaterialTheme.typography.titleLarge,
                 )
                 Spacer(Modifier.height(4.dp))
                 Hint(
                     if (pack) {
-                        "Open the APK in your file manager to install it. Android may ask you to allow installs from that app, and HyperOS runs a security scan first."
+                        stringResource(R.string.export_done_pack_hint)
                     } else {
-                        "Apply icons changes only the icons through Theme Manager; your wallpaper and other theme parts stay as they are. This may not work on every HyperOS build."
+                        stringResource(R.string.export_done_theme_hint)
                     },
                 )
                 if (pack) {
                     val launcher = remember { LauncherHints.defaultLauncher(context) }
                     Spacer(Modifier.height(8.dp))
-                    Text(LauncherHints.forLauncher(launcher), style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(LauncherHints.forLauncher(launcher)), style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(4.dp))
-                    Hint(LauncherHints.afterUpdate(launcher))
+                    Hint(stringResource(LauncherHints.afterUpdate(launcher)))
                 }
                 state.files.forEach { file ->
                     Spacer(Modifier.height(12.dp))
                     HorizontalDivider()
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        if (file.kind == ExportKind.ICON_PACK) "${file.title} · ${file.iconCount} icons" else "${if (file.style == IconStyle.DARK) "Dark" else "Light"} icons · ${file.iconCount} icons",
+                        if (file.kind == ExportKind.ICON_PACK) stringResource(R.string.export_file_pack, file.title, pluralStringResource(R.plurals.icon_count, file.iconCount, file.iconCount)) else stringResource(R.string.export_file_pack, stringResource(if (file.style == IconStyle.DARK) R.string.export_dark_icons else R.string.export_light_icons), pluralStringResource(R.plurals.icon_count, file.iconCount, file.iconCount)),
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Text(file.location, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -146,34 +151,34 @@ fun ExportDialogs(
                         if (file.kind == ExportKind.ICON_PACK) {
                             Button(onClick = {
                                 installPack(PackToInstall(file.uri, file.title, PackNaming.packageFor(file.title)))
-                            }) { Text("Install") }
+                            }) { Text(stringResource(R.string.action_install)) }
                         } else {
                             Button(onClick = {
                                 if (file.absolutePath.isEmpty()) {
-                                    Toast.makeText(context, "Themes can only be applied from internal storage", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, resources.getString(R.string.library_theme_internal_only), Toast.LENGTH_SHORT).show()
                                 } else {
                                     applyTheme(ThemeToApply(file.absolutePath, file.fileName) { onApplied(file) })
                                 }
-                            }) { Text("Apply icons") }
+                            }) { Text(stringResource(R.string.export_apply_icons)) }
                         }
                         OutlinedButton(onClick = {
                             saving = file
                             saveAs.launch(file.fileName)
-                        }) { Text("Save as…") }
-                        TextButton(onClick = { context.startActivity(DownloadsSaver.shareIntent(file.uri, file.fileName)) }) { Text("Share") }
+                        }) { Text(stringResource(R.string.export_save_as)) }
+                        TextButton(onClick = { context.startActivity(DownloadsSaver.shareIntent(context, file.uri, file.fileName)) }) { Text(stringResource(R.string.action_share)) }
                     }
                 }
                 Spacer(Modifier.height(16.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onDismiss) { Text("Done") }
+                    TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_done)) }
                 }
             }
         }
         is ExportState.Failed -> AlertDialog(
             onDismissRequest = onDismiss,
-            title = { Text(if (state.kind == ExportKind.ICON_PACK) "Icon pack failed" else "Export failed") },
+            title = { Text(if (state.kind == ExportKind.ICON_PACK) stringResource(R.string.export_failed_pack) else stringResource(R.string.export_failed)) },
             text = { Text(state.message) },
-            confirmButton = { TextButton(onClick = onDismiss) { Text("OK") } },
+            confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_ok)) } },
         )
     }
 }

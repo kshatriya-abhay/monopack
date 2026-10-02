@@ -46,6 +46,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -56,6 +59,7 @@ import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
+import dev.abhay.monopack.R
 import dev.abhay.monopack.model.Accent
 import dev.abhay.monopack.model.IconStyle
 import dev.abhay.monopack.palette.Seed
@@ -93,7 +97,7 @@ fun SeedRow(selected: Seed, onSelect: (Seed) -> Unit, onCustom: () -> Unit) {
                 } else {
                     Brush.sweepGradient(RAINBOW)
                 },
-                label = "Custom colour",
+                label = stringResource(R.string.seed_custom),
                 selected = isCustom,
                 ring = Brush.sweepGradient(RAINBOW),
                 onClick = onCustom,
@@ -151,6 +155,7 @@ fun CustomColorSheet(
     onDismiss: () -> Unit,
     onConfirm: (Seed) -> Unit,
 ) {
+    val resources = LocalResources.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var hue by rememberSaveable {
         mutableFloatStateOf(if (initial.style == SeedStyle.TONAL_SPOT) SeedColors.hueOf(initial.color).toFloat() else 250f)
@@ -162,10 +167,10 @@ fun CustomColorSheet(
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 24.dp)) {
-            Text("Custom colour", style = MaterialTheme.typography.titleLarge)
+            Text(stringResource(R.string.seed_custom), style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(4.dp))
             Text(
-                "Material You takes only the hue; tone and colourfulness stay within its guidelines.",
+                stringResource(R.string.seed_explain),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -183,7 +188,7 @@ fun CustomColorSheet(
                                 Box(Modifier.size(22.dp).clip(CircleShape).background(Color(palette.foreground)))
                             }
                             Spacer(Modifier.height(6.dp))
-                            Text(accent.label, style = MaterialTheme.typography.labelMedium)
+                            Text(stringResource(accent.label), style = MaterialTheme.typography.labelMedium)
                         }
                     }
                 }
@@ -206,27 +211,27 @@ fun CustomColorSheet(
                     hexText = text
                     val color = SeedColors.parseHex(text)
                     hexError = when {
-                        color == null -> if (text.trim().removePrefix("#").length >= 6) "Use #RRGGBB" else null
-                        SeedColors.isNearGrey(color) -> "Too grey to have a hue. Pick a more colourful colour, or use Monochromatic."
+                        color == null -> if (text.trim().removePrefix("#").length >= 6) resources.getString(R.string.seed_hex_format) else null
+                        SeedColors.isNearGrey(color) -> resources.getString(R.string.seed_too_grey)
                         else -> {
                             hue = SeedColors.hueOf(color).toFloat()
                             null
                         }
                     }
                 },
-                label = { Text("Hex colour") },
+                label = { Text(stringResource(R.string.seed_hex)) },
                 singleLine = true,
                 isError = hexError != null,
-                supportingText = { Text(hexError ?: "Only its hue is used") },
+                supportingText = { Text(hexError ?: stringResource(R.string.seed_hex_hint)) },
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(16.dp))
 
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onDismiss) { Text("Cancel") }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
                 Spacer(Modifier.size(8.dp))
-                Button(onClick = { onConfirm(seed) }) { Text("Use colour") }
+                Button(onClick = { onConfirm(seed) }) { Text(stringResource(R.string.seed_use)) }
             }
         }
     }
@@ -237,6 +242,8 @@ fun CustomColorSheet(
 fun HueSlider(hue: Float, onHueChange: (Float) -> Unit, modifier: Modifier = Modifier) {
     val currentOnChange by rememberUpdatedState(onHueChange)
     val thumbColor = Color(SeedColors.fromHue(hue.toDouble()))
+    val hueLabel = stringResource(R.string.seed_hue)
+    val hueValue = pluralStringResource(R.plurals.seed_hue_value, hue.roundToInt(), hue.roundToInt())
     val border = MaterialTheme.colorScheme.surface
     val outline = MaterialTheme.colorScheme.outline
     Canvas(
@@ -252,8 +259,8 @@ fun HueSlider(hue: Float, onHueChange: (Float) -> Unit, modifier: Modifier = Mod
                 detectHorizontalDragGestures { change, _ -> currentOnChange(hueAt(change.position.x, size.width.toFloat(), inset)) }
             }
             .semantics {
-                contentDescription = "Hue"
-                stateDescription = "${hue.roundToInt()} degrees"
+                contentDescription = hueLabel
+                stateDescription = hueValue
                 progressBarRangeInfo = ProgressBarRangeInfo(hue, 0f..359.9f)
                 setProgress { currentOnChange(it.coerceIn(0f, 359.9f)); true }
             },

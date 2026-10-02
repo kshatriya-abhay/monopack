@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.util.Log
+import androidx.annotation.StringRes
+import dev.abhay.monopack.R
 
 /** Whether a pack's package is installed, and by which signer. */
 enum class InstalledPack { NOT_INSTALLED, SAME_SIGNER, OTHER_SIGNER }
@@ -34,24 +36,25 @@ class AndroidPackInstalls(private val context: Context, private val signer: Pack
 /** A one-line hint for applying an icon pack in the default launcher. */
 object LauncherHints {
     private val HINTS = mapOf(
-        "app.lawnchair" to "In Lawnchair: open Settings and choose the pack under Icon pack.",
-        "app.lawnchair.play" to "In Lawnchair: open Settings and choose the pack under Icon pack.",
-        "com.teslacoilsw.launcher" to "In Nova: Settings → Look & feel → Icon style → Icon theme.",
-        "com.mi.android.globallauncher" to "POCO Launcher doesn't support icon packs. Use the HyperOS theme, or a launcher such as Lawnchair.",
-        "com.miui.home" to "The HyperOS launcher doesn't support icon packs. Use the HyperOS theme, or a launcher such as Lawnchair.",
+        "app.lawnchair" to R.string.hint_lawnchair,
+        "app.lawnchair.play" to R.string.hint_lawnchair,
+        "com.teslacoilsw.launcher" to R.string.hint_nova,
+        "com.mi.android.globallauncher" to R.string.hint_poco,
+        "com.miui.home" to R.string.hint_hyperos,
     )
-    private const val GENERIC = "Open your launcher's settings and choose the pack as its icon pack."
 
-    fun forLauncher(packageName: String?): String = HINTS[packageName] ?: GENERIC
+    /** How to apply a pack in [packageName]'s launcher. */
+    @StringRes
+    fun forLauncher(packageName: String?): Int = HINTS[packageName] ?: R.string.hint_generic
 
     /**
      * How to see an updated pack's new icons. Lawnchair loads a pack once per process and keeps it
      * (its `IconPackProvider` never drops a loaded pack), so picking the pack again doesn't help.
      */
-    fun afterUpdate(packageName: String?): String = when (packageName) {
-        "app.lawnchair", "app.lawnchair.play" ->
-            "Updated a pack? Lawnchair keeps showing the old icons until it restarts: in Lawnchair's settings, tap ⋮ → Restart Lawnchair."
-        else -> "Updated a pack? Some launchers keep the old icons until they restart."
+    @StringRes
+    fun afterUpdate(packageName: String?): Int = when (packageName) {
+        "app.lawnchair", "app.lawnchair.play" -> R.string.hint_update_lawnchair
+        else -> R.string.hint_update_generic
     }
 
     /** The default launcher's package, or null. */

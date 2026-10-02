@@ -71,36 +71,36 @@ class ExportService : Service() {
     private fun progress(state: ExportState.Running?): Notification {
         val pack = state?.kind == ExportKind.ICON_PACK
         val title = when {
-            pack -> "Building icon pack"
-            state != null && state.files > 1 -> "Exporting theme ${state.file} of ${state.files}"
-            else -> "Exporting theme"
+            pack -> getString(R.string.export_building_pack)
+            state != null && state.files > 1 -> getString(R.string.export_theme_n_of, state.file, state.files)
+            else -> getString(R.string.export_exporting_theme)
         }
         val text = when {
-            state == null -> "Starting…"
-            state.signing -> "Building and signing the APK…"
-            else -> "Rendering ${state.done} of ${state.total} icons"
+            state == null -> getString(R.string.export_starting)
+            state.signing -> getString(R.string.export_signing)
+            else -> resources.getQuantityString(R.plurals.export_rendering, state.total, state.done, state.total)
         }
         return base(title, text)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setProgress(state?.total ?: 0, state?.done ?: 0, state == null || state.signing)
-            .addAction(0, "Cancel", PendingIntent.getService(this, 1, Intent(this, ExportService::class.java).setAction(ACTION_CANCEL), PendingIntent.FLAG_IMMUTABLE))
+            .addAction(0, getString(R.string.action_cancel), PendingIntent.getService(this, 1, Intent(this, ExportService::class.java).setAction(ACTION_CANCEL), PendingIntent.FLAG_IMMUTABLE))
             .build()
     }
 
     private fun result(state: ExportState.Done): Notification {
         val first = state.files.first()
         val title = when {
-            first.kind == ExportKind.ICON_PACK -> "Icon pack saved"
-            state.files.size > 1 -> "Themes saved"
-            else -> "Theme saved"
+            first.kind == ExportKind.ICON_PACK -> getString(R.string.export_saved_pack)
+            state.files.size > 1 -> getString(R.string.export_saved_themes)
+            else -> getString(R.string.export_saved_theme)
         }
-        val text = if (first.kind == ExportKind.ICON_PACK) "${first.location} · open it in Files to install" else state.files.joinToString { it.location }
+        val text = if (first.kind == ExportKind.ICON_PACK) getString(R.string.export_saved_pack_text, first.title) else state.files.joinToString { it.location }
         return base(title, text).setAutoCancel(true).setStyle(NotificationCompat.BigTextStyle().bigText(text)).build()
     }
 
     private fun failed(state: ExportState.Failed): Notification =
-        base(if (state.kind == ExportKind.ICON_PACK) "Icon pack failed" else "Export failed", state.message).setAutoCancel(true).build()
+        base(getString(if (state.kind == ExportKind.ICON_PACK) R.string.export_failed_pack else R.string.export_failed), state.message).setAutoCancel(true).build()
 
     private fun base(title: String, text: String): NotificationCompat.Builder =
         NotificationCompat.Builder(this, CHANNEL)
@@ -132,8 +132,8 @@ class ExportService : Service() {
             val manager = context.getSystemService(NotificationManager::class.java)
             if (manager.getNotificationChannel(CHANNEL) == null) {
                 manager.createNotificationChannel(
-                    NotificationChannel(CHANNEL, "Exports", NotificationManager.IMPORTANCE_LOW).apply {
-                        description = "Progress and results of theme and icon pack exports"
+                    NotificationChannel(CHANNEL, context.getString(R.string.channel_exports), NotificationManager.IMPORTANCE_LOW).apply {
+                        description = context.getString(R.string.channel_exports_description)
                     },
                 )
             }

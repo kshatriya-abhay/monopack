@@ -1,5 +1,6 @@
 package dev.abhay.monopack.ui
 
+import androidx.annotation.StringRes
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -59,6 +60,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -66,6 +69,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import dev.abhay.monopack.R
 import dev.abhay.monopack.model.Accent
 import dev.abhay.monopack.model.ColorSource
 import dev.abhay.monopack.model.GlyphSource
@@ -73,6 +77,7 @@ import dev.abhay.monopack.model.IconPalette
 import dev.abhay.monopack.model.IconStyle
 import dev.abhay.monopack.model.Selection
 import dev.abhay.monopack.palette.Seed
+import dev.abhay.monopack.palette.SeedPresets
 import dev.abhay.monopack.render.IconShape
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
@@ -129,7 +134,7 @@ fun ControlPanel(
             Column(
                 Modifier
                     .fillMaxWidth()
-                    .clickable(onClickLabel = if (expanded) "Collapse controls" else "Expand controls") { settle(!expanded) }
+                    .clickable(onClickLabel = if (expanded) stringResource(R.string.panel_collapse) else stringResource(R.string.panel_expand)) { settle(!expanded) }
                     .pointerInput(Unit) {
                         val velocity = VelocityTracker()
                         detectVerticalDragGestures(
@@ -199,26 +204,26 @@ fun ControlPanel(
                         .padding(bottom = 12.dp),
                 ) {
                     // Which mode the grid previews; icon packs contain both (chosen when exporting).
-                    SectionLabel("Preview mode")
+                    SectionLabel(stringResource(R.string.panel_preview_mode))
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                         IconStyle.entries.forEachIndexed { index, style ->
                             SegmentedButton(
                                 selected = state.pending.style == style,
                                 onClick = { onStyleChange(style) },
                                 shape = SegmentedButtonDefaults.itemShape(index, IconStyle.entries.size),
-                            ) { Text(style.label) }
+                            ) { Text(stringResource(style.label)) }
                         }
                     }
                     Spacer(Modifier.height(12.dp))
 
-                    SectionLabel("Colours")
+                    SectionLabel(stringResource(R.string.panel_colours))
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                         ColorSource.entries.forEachIndexed { index, source ->
                             SegmentedButton(
                                 selected = state.pending.source == source,
                                 onClick = { onSourceChange(source) },
                                 shape = SegmentedButtonDefaults.itemShape(index, ColorSource.entries.size),
-                            ) { Text(source.label) }
+                            ) { Text(stringResource(source.label)) }
                         }
                     }
                     if (state.pending.source == ColorSource.CUSTOM) {
@@ -231,7 +236,7 @@ fun ControlPanel(
                     }
                     Spacer(Modifier.height(12.dp))
 
-                    SectionLabel("Accent")
+                    SectionLabel(stringResource(R.string.panel_accent))
                     SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                         Accent.entries.forEachIndexed { index, accent ->
                             SegmentedButton(
@@ -239,12 +244,12 @@ fun ControlPanel(
                                 onClick = { onAccentChange(accent) },
                                 shape = SegmentedButtonDefaults.itemShape(index, Accent.entries.size),
                                 icon = { state.activePalettes[accent]?.get(state.pending.style)?.let { AccentDot(it) } },
-                            ) { Text(accent.label) }
+                            ) { Text(stringResource(accent.label)) }
                         }
                     }
                     Spacer(Modifier.height(12.dp))
 
-                    SectionLabel("Icon shape")
+                    SectionLabel(stringResource(R.string.panel_icon_shape))
                     ShapeRow(selected = iconShape, onSelect = onIconShape)
                 }
             }
@@ -324,44 +329,48 @@ private fun Swatch(color: Color) {
     )
 }
 
-private fun summary(state: UiState): String = if (!state.iconsReady) {
-    "Preparing icons… ${state.loaded}/${state.total}"
-} else {
-    buildString {
-        append("${state.total} apps · ${state.count(GlyphSource.NATIVE_MONO)} native · ")
-        append("${state.count(GlyphSource.FORCED_MONO)} generated")
-        val failed = state.count(GlyphSource.FAILED)
-        if (failed > 0) append(" · $failed failed")
-    }
+@Composable
+private fun summary(state: UiState): String {
+    if (!state.iconsReady) return stringResource(R.string.panel_preparing_count, state.loaded, state.total)
+    val counts = stringResource(R.string.panel_counts, pluralStringResource(R.plurals.app_count, state.total, state.total), state.count(GlyphSource.NATIVE_MONO), state.count(GlyphSource.FORCED_MONO))
+    val failed = state.count(GlyphSource.FAILED)
+    return if (failed > 0) stringResource(R.string.panel_counts_failed, counts, failed) else counts
 }
 
+@Composable
 private fun caption(state: UiState): String {
-    val committed = state.committed ?: return "Preparing icons…"
-    return "Showing ${committed.describe()}"
+    val committed = state.committed ?: return stringResource(R.string.panel_preparing)
+    val accent = stringResource(committed.accent.label)
+    val mode = stringResource(if (committed.style == IconStyle.DARK) R.string.panel_mode_dark else R.string.panel_mode_light)
+    return if (committed.source == ColorSource.CUSTOM) {
+        // Preset colour names are part of pack names, so they aren't translated.
+        val colour = if (committed.seed in SeedPresets.AOSP) committed.seed.name else stringResource(R.string.panel_custom)
+        stringResource(R.string.panel_showing_custom, colour, accent, mode)
+    } else {
+        stringResource(R.string.panel_showing, accent, mode)
+    }
 }
 
-private fun Selection.describe(): String {
-    val colours = if (source == ColorSource.CUSTOM) "${seed.name} · " else ""
-    return "$colours${accent.label} · ${style.label.lowercase()}"
-}
-
-private val ColorSource.label
+@get:StringRes
+private val ColorSource.label: Int
     get() = when (this) {
-        ColorSource.WALLPAPER -> "Wallpaper"
-        ColorSource.CUSTOM -> "Custom"
+        ColorSource.WALLPAPER -> R.string.panel_wallpaper
+        ColorSource.CUSTOM -> R.string.panel_custom
     }
 
-private val IconStyle.label
+@get:StringRes
+private val IconStyle.label: Int
     get() = when (this) {
-        IconStyle.LIGHT -> "Light mode"
-        IconStyle.DARK -> "Dark mode"
+        IconStyle.LIGHT -> R.string.mode_light
+        IconStyle.DARK -> R.string.mode_dark
     }
 
-internal val Accent.label
+@get:StringRes
+internal val Accent.label: Int
     get() = when (this) {
-        Accent.PRIMARY -> "Primary"
-        Accent.SECONDARY -> "Secondary"
-        Accent.TERTIARY -> "Tertiary"
+        Accent.PRIMARY -> R.string.accent_primary
+        Accent.SECONDARY -> R.string.accent_secondary
+        Accent.TERTIARY -> R.string.accent_tertiary
     }
 
 /**
@@ -374,9 +383,10 @@ private fun ShapeRow(selected: IconShape, onSelect: (IconShape) -> Unit) {
     Row(Modifier.fillMaxWidth().selectableGroup(), horizontalArrangement = Arrangement.SpaceBetween) {
         IconShape.entries.forEach { shape ->
             val isSelected = shape == selected
+            val name = stringResource(shape.label)
             TooltipBox(
                 positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
-                tooltip = { PlainTooltip { Text(shape.label) } },
+                tooltip = { PlainTooltip { Text(name) } },
                 state = rememberTooltipState(),
             ) {
                 Box(
@@ -385,7 +395,7 @@ private fun ShapeRow(selected: IconShape, onSelect: (IconShape) -> Unit) {
                         .clip(RoundedCornerShape(12.dp))
                         .background(if (isSelected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
                         .selectable(selected = isSelected, role = Role.RadioButton, onClick = { onSelect(shape) })
-                        .semantics { contentDescription = shape.label },
+                        .semantics { contentDescription = name },
                     contentAlignment = Alignment.Center,
                 ) {
                     Box(

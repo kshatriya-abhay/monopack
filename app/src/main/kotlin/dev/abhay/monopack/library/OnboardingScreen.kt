@@ -37,6 +37,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -53,7 +54,7 @@ import java.io.File
  * @param lostAccess a folder was chosen before but can't be read any more.
  */
 @Composable
-fun OnboardingScreen(lostAccess: Boolean, error: String?, onFolderPicked: (Uri) -> Unit) {
+fun OnboardingScreen(lostAccess: Boolean, error: LibraryError?, onFolderPicked: (Uri) -> Unit) {
     var step by rememberSaveable { mutableIntStateOf(if (lostAccess) 1 else 0) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let(onFolderPicked) }
     // Re-checked on resume: the user may have created the folder in the picker and backed out.
@@ -82,32 +83,30 @@ fun OnboardingScreen(lostAccess: Boolean, error: String?, onFolderPicked: (Uri) 
             }
             Spacer(Modifier.height(32.dp))
             if (step == 0) {
-                Text("Themed icons for every app", style = MaterialTheme.typography.headlineSmall)
+                Text(stringResource(R.string.onboarding_title), style = MaterialTheme.typography.headlineSmall)
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "Monopack makes Material You icons for all your apps, including the ones without a themed icon. " +
-                        "Fix any icon you like, then export them as an icon pack for your launcher (or as a HyperOS theme).",
+                    stringResource(R.string.onboarding_text),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(32.dp))
-                Button(onClick = { step = 1 }, modifier = Modifier.fillMaxWidth()) { Text("Next") }
+                Button(onClick = { step = 1 }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.action_next)) }
             } else {
                 Text(
                     when {
-                        lostAccess -> "Choose your folder again"
-                        folderExists -> "Choose the Monopack folder"
-                        else -> "Make a Monopack folder"
+                        lostAccess -> stringResource(R.string.onboarding_folder_again)
+                        folderExists -> stringResource(R.string.onboarding_folder_choose, FOLDER_NAME)
+                        else -> stringResource(R.string.onboarding_folder_make, FOLDER_NAME)
                     },
                     style = MaterialTheme.typography.headlineSmall,
                 )
                 Spacer(Modifier.height(12.dp))
                 Text(
                     if (lostAccess) {
-                        "Monopack can't open the folder it saves to any more. Choose it again (or make a new one)."
+                        stringResource(R.string.onboarding_lost_access)
                     } else {
-                        "Monopack saves your icon packs in a folder of your own and lists them on its home screen. " +
-                            "Android lets apps use a folder only after you pick it."
+                        stringResource(R.string.onboarding_folder_text)
                     },
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -115,25 +114,25 @@ fun OnboardingScreen(lostAccess: Boolean, error: String?, onFolderPicked: (Uri) 
                 Spacer(Modifier.height(20.dp))
                 val steps = if (folderExists) {
                     listOf(
-                        "Tap Open folder picker. It opens in Download/$FOLDER_NAME.",
-                        "Tap Use this folder, then Allow.",
+                        stringResource(R.string.onboarding_step_open_in_folder, FOLDER_NAME),
+                        stringResource(R.string.onboarding_step_use_folder),
                     )
                 } else {
                     listOf(
-                        "Tap Open folder picker. It opens in Download.",
-                        "Create a new folder (the folder+ button, or ⋮ → New folder) and name it $FOLDER_NAME.",
-                        "Open it, tap Use this folder, then Allow.",
+                        stringResource(R.string.onboarding_step_open_downloads),
+                        stringResource(R.string.onboarding_step_create, FOLDER_NAME),
+                        stringResource(R.string.onboarding_step_open_use),
                     )
                 }
                 steps.forEachIndexed { index, text -> SetupStep(index + 1, text) }
                 error?.let {
                     Spacer(Modifier.height(12.dp))
-                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                    Text(it.text(), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
                 }
                 Spacer(Modifier.height(24.dp))
-                Button(onClick = { picker.launch(initialUri) }, modifier = Modifier.fillMaxWidth()) { Text("Open folder picker") }
+                Button(onClick = { picker.launch(initialUri) }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.onboarding_open_picker)) }
                 if (!lostAccess) {
-                    TextButton(onClick = { step = 0 }, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Back") }
+                    TextButton(onClick = { step = 0 }, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(stringResource(R.string.action_back)) }
                 }
             }
         }
@@ -184,19 +183,19 @@ fun InstallPermissionStep(onAllow: () -> Unit, onSkip: () -> Unit) {
                 )
             }
             Spacer(Modifier.height(32.dp))
-            Text("Install packs from Monopack", style = MaterialTheme.typography.headlineSmall)
+            Text(stringResource(R.string.onboarding_install_title), style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(12.dp))
             Text(
-                "Allow Monopack to install the icon packs it makes, so a pack installs in one tap and updates without asking again.",
+                stringResource(R.string.onboarding_install_text),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(20.dp))
-            SetupStep(1, "Tap Allow. Android opens \"Install unknown apps\" for Monopack.")
-            SetupStep(2, "Turn on \"Allow from this source\", then come back.")
+            SetupStep(1, stringResource(R.string.onboarding_install_step1))
+            SetupStep(2, stringResource(R.string.onboarding_install_step2))
             Spacer(Modifier.height(24.dp))
-            Button(onClick = onAllow, modifier = Modifier.fillMaxWidth()) { Text("Allow") }
-            TextButton(onClick = onSkip, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Skip for now") }
+            Button(onClick = onAllow, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.action_allow)) }
+            TextButton(onClick = onSkip, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(stringResource(R.string.action_skip_for_now)) }
         }
     }
 }

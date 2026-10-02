@@ -1,5 +1,6 @@
 package dev.abhay.monopack.ui
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,27 +33,29 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import dev.abhay.monopack.R
 import dev.abhay.monopack.iconpack.PackNaming
-import dev.abhay.monopack.hyperos.HYPEROS_RESET_NOTE
 import dev.abhay.monopack.library.PackNameWarning
 import dev.abhay.monopack.model.IconStyle
 import java.text.DateFormat
 import java.util.Date
 
 /** Icon pack styles: light and dark icons that follow dark mode (default), or one style for both. */
-private enum class PackStyleChoice(val label: String, val styles: Set<IconStyle>, val suffix: String?) {
-    AUTO("Light & Dark", setOf(IconStyle.LIGHT, IconStyle.DARK), null),
-    LIGHT("Light", setOf(IconStyle.LIGHT), "Light"),
-    DARK("Dark", setOf(IconStyle.DARK), "Dark"),
+// The suffix is part of the pack's name (its identity), so it isn't translated.
+private enum class PackStyleChoice(@StringRes val label: Int, val styles: Set<IconStyle>, val suffix: String?) {
+    AUTO(R.string.export_style_auto, setOf(IconStyle.LIGHT, IconStyle.DARK), null),
+    LIGHT(R.string.export_style_light, setOf(IconStyle.LIGHT), "Light"),
+    DARK(R.string.export_style_dark, setOf(IconStyle.DARK), "Dark"),
 }
 
-private enum class StyleChoice(val label: String, val styles: Set<IconStyle>) {
-    LIGHT("Light", setOf(IconStyle.LIGHT)),
-    DARK("Dark", setOf(IconStyle.DARK)),
-    BOTH("Both", setOf(IconStyle.LIGHT, IconStyle.DARK)),
+private enum class StyleChoice(@StringRes val label: Int, val styles: Set<IconStyle>) {
+    LIGHT(R.string.export_style_light, setOf(IconStyle.LIGHT)),
+    DARK(R.string.export_style_dark, setOf(IconStyle.DARK)),
+    BOTH(R.string.export_style_both, setOf(IconStyle.LIGHT, IconStyle.DARK)),
 }
 
 /**
@@ -97,9 +100,9 @@ fun ExportOptionsSheet(
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 24.dp),
         ) {
-            Text(if (defaults.pack != null) "Update icon pack" else "Export", style = MaterialTheme.typography.titleLarge)
+            Text(if (defaults.pack != null) stringResource(R.string.export_title_update) else stringResource(R.string.export_title), style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(16.dp))
-            Text("Export as", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 6.dp))
+            Text(stringResource(R.string.export_as), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 6.dp))
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 ExportTarget.entries.forEachIndexed { index, option ->
                     SegmentedButton(
@@ -107,40 +110,39 @@ fun ExportOptionsSheet(
                         onClick = { target = option },
                         enabled = option != ExportTarget.HYPEROS || hasThemeManager,
                         shape = SegmentedButtonDefaults.itemShape(index, ExportTarget.entries.size),
-                    ) { Text(if (option == ExportTarget.HYPEROS) "HyperOS theme" else "Icon pack") }
+                    ) { Text(if (option == ExportTarget.HYPEROS) stringResource(R.string.export_target_theme) else stringResource(R.string.export_target_pack)) }
                 }
             }
-            if (!hasThemeManager) Hint("HyperOS themes need HyperOS Theme Manager.", Modifier.padding(top = 6.dp))
+            if (!hasThemeManager) Hint(stringResource(R.string.export_needs_theme_manager), Modifier.padding(top = 6.dp))
             Spacer(Modifier.height(16.dp))
             OutlinedTextField(
                 value = if (pack) packName else name,
                 onValueChange = { if (pack) packName = it else name = it },
-                label = { Text(if (pack) "Pack name" else "Theme name") },
-                supportingText = { Text(if (pack) "Shown in your launcher's icon pack list" else "\"· Light\" or \"· Dark\" is added") },
+                label = { Text(if (pack) stringResource(R.string.export_pack_name) else stringResource(R.string.export_theme_name)) },
+                supportingText = { Text(if (pack) stringResource(R.string.export_pack_name_hint) else stringResource(R.string.export_theme_name_hint)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
             when (warning) {
                 is PackNameWarning.Replaces -> Callout(
-                    buildString {
-                        if (warning.exportedAt != null) {
-                            append("Your library has a pack named \"${packName.trim()}\" (exported ")
-                            append(DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(warning.exportedAt)))
-                            append(")")
-                        } else {
-                            append("A pack named \"${packName.trim()}\" is installed")
-                        }
-                        append(". Installing this one replaces it. Use another name to keep both.")
+                    if (warning.exportedAt != null) {
+                        stringResource(
+                            R.string.export_warning_in_library,
+                            packName.trim(),
+                            DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(warning.exportedAt)),
+                        )
+                    } else {
+                        stringResource(R.string.export_warning_installed, packName.trim())
                     },
                 )
                 PackNameWarning.Conflicts -> Callout(
-                    "A pack with this name is installed, but it was made before Monopack was reinstalled, so Android won't replace it. Uninstall it first, or use another name.",
+                    stringResource(R.string.export_warning_conflict),
                 )
                 null -> Unit
             }
             Spacer(Modifier.height(8.dp))
             if (pack) {
-                Text("Icon style", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 6.dp))
+                Text(stringResource(R.string.export_icon_style), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 6.dp))
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     PackStyleChoice.entries.forEachIndexed { index, option ->
                         SegmentedButton(
@@ -150,51 +152,51 @@ fun ExportOptionsSheet(
                                 packStyle = option
                             },
                             shape = SegmentedButtonDefaults.itemShape(index, PackStyleChoice.entries.size),
-                        ) { Text(option.label) }
+                        ) { Text(stringResource(option.label)) }
                     }
                 }
                 Hint(
                     if (packStyle == PackStyleChoice.AUTO) {
-                        "Light icons in light mode and dark icons in dark mode; your launcher switches them (some need a restart). Edited apps with auto night mode off keep one icon."
+                        stringResource(R.string.export_style_auto_hint)
                     } else {
-                        "Every icon keeps this style in light and dark mode."
+                        stringResource(R.string.export_style_single_hint)
                     },
                     Modifier.padding(top = 6.dp),
                 )
             } else {
-                Text("Icon style", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 6.dp))
+                Text(stringResource(R.string.export_icon_style), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(bottom = 6.dp))
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                     StyleChoice.entries.forEachIndexed { index, option ->
                         SegmentedButton(
                             selected = choice == option,
                             onClick = { choice = option },
                             shape = SegmentedButtonDefaults.itemShape(index, StyleChoice.entries.size),
-                        ) { Text(option.label) }
+                        ) { Text(stringResource(option.label)) }
                     }
                 }
-                Hint(HYPEROS_RESET_NOTE, Modifier.padding(top = 8.dp))
+                Hint(stringResource(R.string.hyperos_reset_note), Modifier.padding(top = 8.dp))
                 if (choice == StyleChoice.BOTH) {
                     Callout(
-                        "HyperOS themes can't follow dark mode. Monopack creates two themes, Light and Dark: apply the one that matches your mode, and the other one when you switch.",
+                        stringResource(R.string.export_both_themes),
                     )
                 }
             }
             Spacer(Modifier.height(16.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Include generated icons", style = MaterialTheme.typography.bodyLarge)
-                    Hint("Off: apps without their own monochrome icon keep their original icon.")
+                    Text(stringResource(R.string.export_include_generated), style = MaterialTheme.typography.bodyLarge)
+                    Hint(stringResource(R.string.export_include_generated_hint))
                 }
                 Spacer(Modifier.width(12.dp))
                 Switch(checked = includeGenerated, onCheckedChange = { includeGenerated = it })
             }
             Spacer(Modifier.height(20.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onDismiss) { Text("Cancel") }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
                 Spacer(Modifier.width(8.dp))
                 Button(onClick = {
                     onExport(ExportOptions(if (pack) packName else name, if (pack) packStyle.styles else choice.styles, includeGenerated, target))
-                }) { Text(if (pack && updatingSame) "Update" else "Export") }
+                }) { Text(if (pack && updatingSame) stringResource(R.string.action_update) else stringResource(R.string.export_title)) }
             }
         }
     }
@@ -211,9 +213,10 @@ internal fun Hint(text: String, modifier: Modifier = Modifier) {
 /** A tonal card with a warning sign, for things that shouldn't be missed. */
 @Composable
 internal fun Callout(text: String) {
+    val description = stringResource(R.string.callout_warning, text)
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
-        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).semantics { contentDescription = "Warning: $text" },
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp).semantics { contentDescription = description },
     ) {
         Row(Modifier.padding(12.dp)) {
             Text("⚠", color = MaterialTheme.colorScheme.onTertiaryContainer, modifier = Modifier.padding(end = 10.dp))

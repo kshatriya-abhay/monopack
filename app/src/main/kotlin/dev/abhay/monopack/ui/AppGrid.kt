@@ -1,5 +1,6 @@
 package dev.abhay.monopack.ui
 
+import androidx.annotation.StringRes
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
@@ -53,6 +54,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -60,6 +62,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
+import dev.abhay.monopack.R
 import dev.abhay.monopack.model.GlyphSource
 import dev.abhay.monopack.render.LocalIconShape
 import kotlin.math.abs
@@ -159,8 +162,8 @@ fun AppGrid(
                 modifier = Modifier
                     .fillMaxWidth()
                     .combinedClickable(
-                        onClickLabel = if (selected.isNotEmpty()) "Select" else "Edit icon",
-                        onLongClickLabel = "Select to edit",
+                        onClickLabel = if (selected.isNotEmpty()) stringResource(R.string.action_select) else stringResource(R.string.editor_title),
+                        onLongClickLabel = stringResource(R.string.grid_select_to_edit),
                         onClick = { onItemClick(item) },
                         onLongClick = { onItemLongClick(item) },
                     )
@@ -224,13 +227,14 @@ private fun GridIcon(item: DrawerItem, colors: IconColors?, contrast: Int, selec
 /** The work-profile badge (a briefcase), as launchers show it on work apps. */
 @Composable
 private fun WorkBadge(modifier: Modifier) {
+    val description = stringResource(R.string.info_profile_work)
     Box(
         modifier
             .size(20.dp)
             .background(MaterialTheme.colorScheme.surface, CircleShape)
             .padding(2.dp)
             .background(MaterialTheme.colorScheme.tertiary, CircleShape)
-            .semantics { contentDescription = "Work profile" },
+            .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
         Icon(Symbols.Work, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiary, modifier = Modifier.size(11.dp))
@@ -243,7 +247,8 @@ private fun SelectedMark(modifier: Modifier) {
     val fill = MaterialTheme.colorScheme.primary
     val check = MaterialTheme.colorScheme.onPrimary
     val ring = MaterialTheme.colorScheme.surface
-    Canvas(modifier.size(20.dp).semantics { contentDescription = "Selected" }) {
+    val description = stringResource(R.string.state_selected)
+    Canvas(modifier.size(20.dp).semantics { contentDescription = description }) {
         drawCircle(ring)
         drawCircle(fill, radius = size.minDimension / 2 - 2.dp.toPx())
         val path = Path().apply {
@@ -280,18 +285,19 @@ private fun FilterRow(header: GridHeader) {
             FilterChip(
                 selected = header.filter == filter,
                 onClick = { header.onFilterChange(filter) },
-                label = { Text("${filter.label} ${header.counts[filter] ?: 0}") },
+                label = { Text(stringResource(R.string.grid_filter_count, stringResource(filter.label), header.counts[filter] ?: 0)) },
             )
         }
     }
 }
 
-private val GridFilter.label
+@get:StringRes
+private val GridFilter.label: Int
     get() = when (this) {
-        GridFilter.ALL -> "All"
-        GridFilter.NATIVE -> "Native"
-        GridFilter.GENERATED -> "Generated"
-        GridFilter.EDITED -> "Edited"
+        GridFilter.ALL -> R.string.filter_all
+        GridFilter.NATIVE -> R.string.filter_native
+        GridFilter.GENERATED -> R.string.filter_generated
+        GridFilter.EDITED -> R.string.filter_edited
     }
 
 @Composable
@@ -302,12 +308,12 @@ private fun DefaultPaletteBanner(onUseCustomColours: () -> Unit, onDismiss: () -
     ) {
         Column(Modifier.padding(16.dp)) {
             Text(
-                "Your system isn't sharing wallpaper colours, so these are Android's default blues.",
+                stringResource(R.string.grid_default_palette),
                 style = MaterialTheme.typography.bodyMedium,
             )
             Row(modifier = Modifier.align(Alignment.End)) {
-                TextButton(onClick = onDismiss) { Text("Dismiss") }
-                TextButton(onClick = onUseCustomColours) { Text("Use custom colours") }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_dismiss)) }
+                TextButton(onClick = onUseCustomColours) { Text(stringResource(R.string.grid_use_custom)) }
             }
         }
     }
@@ -320,7 +326,7 @@ private fun HintCard() {
         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
     ) {
         Text(
-            "Preparing your icons… Pick colours below; changes show straight away.",
+            stringResource(R.string.grid_hint),
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(16.dp),
         )

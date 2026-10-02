@@ -52,7 +52,10 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -60,13 +63,13 @@ import androidx.compose.ui.unit.dp
 import dev.abhay.monopack.R
 import dev.abhay.monopack.export.ExportKind
 import dev.abhay.monopack.export.InstalledPack
+import dev.abhay.monopack.export.PackToInstall
 import dev.abhay.monopack.hyperos.ApplyTheme
 import dev.abhay.monopack.hyperos.ThemeToApply
+import dev.abhay.monopack.iconpack.PackNaming
 import dev.abhay.monopack.model.IconStyle
 import dev.abhay.monopack.newapps.NewApps
 import dev.abhay.monopack.render.LocalIconShape
-import dev.abhay.monopack.export.PackToInstall
-import dev.abhay.monopack.iconpack.PackNaming
 import dev.abhay.monopack.ui.InstallPack
 import dev.abhay.monopack.ui.Symbols
 import dev.abhay.monopack.ui.TooltipIconButton
@@ -97,12 +100,13 @@ fun LibraryScreen(
     onUpdateNewApps: (NewAppsFound) -> Unit = {},
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     var confirmDelete by remember { mutableStateOf(false) }
 
     fun apply(item: LibraryItem) {
         val path = state.pathFor(item)
         if (path == null) {
-            Toast.makeText(context, "Themes can only be applied from internal storage", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, resources.getString(R.string.library_theme_internal_only), Toast.LENGTH_SHORT).show()
         } else {
             applyTheme(ThemeToApply(path, item.file?.name ?: item.fileName) { onApplied(item) })
         }
@@ -125,22 +129,22 @@ fun LibraryScreen(
         topBar = {
             if (state.selecting) {
                 TopAppBar(
-                    title = { Text("${state.selected.size} selected") },
-                    navigationIcon = { TooltipIconButton(Icons.Filled.Close, "Cancel", onClearSelection) },
+                    title = { Text(pluralStringResource(R.plurals.selection_count, state.selected.size, state.selected.size)) },
+                    navigationIcon = { TooltipIconButton(Icons.Filled.Close, stringResource(R.string.action_cancel), onClearSelection) },
                     actions = {
-                        TooltipIconButton(Symbols.SelectAll, "Select all", onSelectAll)
-                        TooltipIconButton(Icons.Filled.Delete, "Delete", { confirmDelete = true })
+                        TooltipIconButton(Symbols.SelectAll, stringResource(R.string.action_select_all), onSelectAll)
+                        TooltipIconButton(Icons.Filled.Delete, stringResource(R.string.action_delete), { confirmDelete = true })
                     },
                     colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
                 )
             } else {
                 TopAppBar(
-                    title = { Text("Monopack") },
+                    title = { Text(stringResource(R.string.app_name)) },
                     actions = {
                         val lastTheme = state.lastTheme
                         val reapply = lastTheme?.let { theme -> state.items.firstOrNull { !it.missing && state.pathFor(it) == theme.absolutePath } }
-                        if (reapply != null) TextButton(onClick = { apply(reapply) }) { Text("Reapply") }
-                        TooltipIconButton(Icons.Filled.Settings, "Settings", onSettings)
+                        if (reapply != null) TextButton(onClick = { apply(reapply) }) { Text(stringResource(R.string.library_reapply)) }
+                        TooltipIconButton(Icons.Filled.Settings, stringResource(R.string.settings_title), onSettings)
                     },
                 )
             }
@@ -150,18 +154,18 @@ fun LibraryScreen(
                 ExtendedFloatingActionButton(
                     onClick = onCreate,
                     icon = { Icon(Icons.Filled.Add, contentDescription = null) },
-                    text = { Text("Create") },
+                    text = { Text(stringResource(R.string.library_create)) },
                 )
             }
         },
     ) { padding ->
         when {
-            state.items.isEmpty() -> EmptyLibrary(padding, state.error)
+            state.items.isEmpty() -> EmptyLibrary(padding, state.error?.text())
             else -> LazyColumn(contentPadding = PaddingValues(top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding() + 88.dp)) {
                 state.newApps?.let { found ->
                     item(key = "new-apps") { NewAppsBanner(found, onUpdate = { onUpdateNewApps(found) }, onDismiss = onDismissNewApps) }
                 }
-                state.error?.let { error -> item { Text(error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp)) } }
+                state.error?.let { error -> item { Text(error.text(), color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp)) } }
                 items(state.items, key = { it.fileName }) { item ->
                     LibraryRow(
                         item = item,
@@ -183,15 +187,15 @@ fun LibraryScreen(
         val count = state.selected.size
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
-            title = { Text("Delete $count ${if (count == 1) "item" else "items"}?") },
-            text = { Text(if (count == 1) "Its file is deleted too." else "Their files are deleted too.") },
+            title = { Text(pluralStringResource(R.plurals.library_delete_title, count, count)) },
+            text = { Text(pluralStringResource(R.plurals.library_delete_text, count)) },
             confirmButton = {
                 TextButton(onClick = {
                     confirmDelete = false
                     onDeleteSelected()
-                }) { Text("Delete") }
+                }) { Text(stringResource(R.string.action_delete)) }
             },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(stringResource(R.string.action_cancel)) } },
         )
     }
 }
@@ -206,17 +210,17 @@ private fun NewAppsBanner(found: NewAppsFound, onUpdate: () -> Unit, onDismiss: 
         Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 4.dp)) {
             val count = found.apps.size
             Text(
-                if (count == 1) "${found.apps[0].label} has no themed icon" else "$count new apps have no themed icon",
+                if (count == 1) stringResource(R.string.new_apps_title_one, found.apps[0].label) else pluralStringResource(R.plurals.new_apps_title, count, count),
                 style = MaterialTheme.typography.titleSmall,
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                "${NewApps.names(found.apps)} ${if (count == 1) "isn't" else "aren't"} in ${found.packLabel}.",
+                pluralStringResource(R.plurals.new_apps_banner_text, count, NewApps.names(found.apps, LocalResources.current), found.packLabel),
                 style = MaterialTheme.typography.bodyMedium,
             )
             Row(Modifier.align(Alignment.End)) {
-                TextButton(onClick = onDismiss) { Text("Dismiss") }
-                TextButton(onClick = onUpdate) { Text("Update pack") }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_dismiss)) }
+                TextButton(onClick = onUpdate) { Text(stringResource(R.string.new_apps_update_pack)) }
             }
         }
     }
@@ -229,10 +233,10 @@ private fun EmptyLibrary(padding: PaddingValues, error: String?) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("Nothing here yet", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.library_empty_title), style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
         Text(
-            error ?: "Tap Create to make themed icons, then export them as an icon pack for your launcher (or a HyperOS theme).",
+            error ?: stringResource(R.string.library_empty_text),
             style = MaterialTheme.typography.bodyMedium,
             color = if (error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -255,7 +259,7 @@ private fun LibraryRow(
         Modifier
             .fillMaxWidth()
             .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
-            .combinedClickable(onClick = onClick, onLongClick = onLongClick, onLongClickLabel = "Select")
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick, onLongClickLabel = stringResource(R.string.action_select))
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -264,7 +268,7 @@ private fun LibraryRow(
             if (selected) {
                 Icon(
                     Icons.Filled.CheckCircle,
-                    contentDescription = "Selected",
+                    contentDescription = stringResource(R.string.state_selected),
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.align(Alignment.BottomEnd).size(20.dp).background(MaterialTheme.colorScheme.surface, CircleShape),
                 )
@@ -277,12 +281,12 @@ private fun LibraryRow(
                 // Icon packs are the default; HyperOS themes are marked.
                 if (item.kind == ExportKind.THEME) {
                     Spacer(Modifier.width(8.dp))
-                    Pill("Theme")
+                    Pill(stringResource(R.string.library_kind_theme))
                 }
             }
             Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                val text = if (item.missing) "File missing" else item.iconCount?.let { "$it icons" }
+                val text = if (item.missing) stringResource(R.string.library_file_missing) else item.iconCount?.let { pluralStringResource(R.plurals.icon_count, it, it) }
                 if (text != null) {
                     Text(
                         text,
@@ -293,9 +297,9 @@ private fun LibraryRow(
                 }
                 val status = when {
                     item.missing -> null
-                    applied -> "Applied"
-                    installed == InstalledPack.SAME_SIGNER -> "Installed"
-                    installed == InstalledPack.OTHER_SIGNER -> "Another version installed"
+                    applied -> stringResource(R.string.library_applied)
+                    installed == InstalledPack.SAME_SIGNER -> stringResource(R.string.library_installed)
+                    installed == InstalledPack.OTHER_SIGNER -> stringResource(R.string.library_other_installed)
                     else -> null
                 }
                 if (status != null) {
@@ -305,10 +309,17 @@ private fun LibraryRow(
             }
         }
         when {
-            item.missing -> TooltipIconButton(Icons.Filled.Delete, "Remove ${item.title}", onRemove)
-            item.kind == ExportKind.ICON_PACK -> TooltipIconButton(Symbols.Install, "Install ${item.title}", onInstall)
+            item.missing -> TooltipIconButton(Icons.Filled.Delete, stringResource(R.string.library_remove, item.title), onRemove)
+            item.kind == ExportKind.ICON_PACK -> TooltipIconButton(Symbols.Install, stringResource(R.string.library_install, item.title), onInstall)
         }
     }
+}
+
+/** The library folder problem, in words. */
+@Composable
+internal fun LibraryError.text(): String = when (this) {
+    is LibraryError.CantRead -> stringResource(R.string.library_error_cant_read, folder)
+    LibraryError.CantKeepAccess -> stringResource(R.string.library_error_keep_access)
 }
 
 /** A small outlined label (not clickable), like a chip. */
@@ -336,12 +347,13 @@ private fun Thumbnail(item: LibraryItem) {
         IconStyle.DARK -> MaterialTheme.colorScheme.inverseOnSurface
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
+    val description = if (item.missing) stringResource(R.string.library_missing_description, item.title) else item.title
     Box(
         Modifier
             .size(56.dp)
             .clip(item.shape?.shape ?: LocalIconShape.current)
             .background(plate)
-            .semantics { contentDescription = if (item.missing) "${item.title}, file missing" else item.title },
+            .semantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
         Icon(painterResource(R.drawable.ic_launcher_monochrome), contentDescription = null, tint = glyph, modifier = Modifier.requiredSize(84.dp))

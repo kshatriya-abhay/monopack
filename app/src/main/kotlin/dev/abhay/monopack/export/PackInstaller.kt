@@ -11,7 +11,11 @@ import android.util.Log
 import androidx.core.content.IntentCompat
 import androidx.core.net.toUri
 import dev.abhay.monopack.appContainer
+import dev.abhay.monopack.util.catching
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -37,7 +41,11 @@ sealed interface InstallState {
  * "Install unknown apps" allowance). Packs Monopack installed update without a prompt on Android
  * 12+ (`USER_ACTION_NOT_REQUIRED`); otherwise Android asks, and [state] carries its screen.
  */
-class PackInstaller(private val context: Context) {
+class PackInstaller(
+    private val context: Context,
+    /** App-wide, so an install isn't cut off when the screen that started it goes away. */
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+) {
     private val _state = MutableStateFlow<InstallState>(InstallState.Idle)
     val state: StateFlow<InstallState> = _state.asStateFlow()
 
@@ -48,11 +56,16 @@ class PackInstaller(private val context: Context) {
     fun permissionIntent(): Intent =
         Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, "package:${context.packageName}".toUri())
 
-    suspend fun install(pack: PackToInstall) {
-        if (_state.value is InstallState.Installing) return
+    /** Starts installing [pack] unless an install is under way; progress and the result arrive in [state]. */
+    fun install(pack: PackToInstall) {
+        if (_state.value is InstallState.Installing || _state.value is InstallState.NeedsConfirmation) return
+        scope.launch { installNow(pack) }
+    }
+
+    private suspend fun installNow(pack: PackToInstall) {
         val update = pack.packageName?.let { isInstalled(it) } ?: false
         _state.value = InstallState.Installing(pack, update)
-        runCatching {
+        catching {
             withContext(Dispatchers.IO) {
                 val installer = context.packageManager.packageInstaller
                 val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
@@ -61,17 +74,23 @@ class PackInstaller(private val context: Context) {
                     pack.packageName?.let(::setAppPackageName)
                 }
                 val id = installer.createSession(params)
-                installer.openSession(id).use { session ->
-                    context.contentResolver.openInputStream(pack.uri.toUri())?.use { input ->
-                        session.openWrite("pack.apk", 0, -1).use { out ->
-                            input.copyTo(out)
-                            session.fsync(out)
-                        }
-                    } ?: error("Can't read ${pack.title}")
-                    val status = Intent(context, InstallStatusReceiver::class.java)
-                    // Mutable: the installer adds the result extras.
-                    val pending = PendingIntent.getBroadcast(context, id, status, PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-                    session.commit(pending.intentSender)
+                try {
+                    installer.openSession(id).use { session ->
+                        context.contentResolver.openInputStream(pack.uri.toUri())?.use { input ->
+                            session.openWrite("pack.apk", 0, -1).use { out ->
+                                input.copyTo(out)
+                                session.fsync(out)
+                            }
+                        } ?: error("Can't read ${pack.title}")
+                        val status = Intent(context, InstallStatusReceiver::class.java)
+                        // Mutable: the installer adds the result extras.
+                        val pending = PendingIntent.getBroadcast(context, id, status, PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                        session.commit(pending.intentSender)
+                    }
+                } catch (e: Exception) {
+                    // Don't leave a half-written session behind (they count against a per-app limit).
+                    runCatching { installer.abandonSession(id) }
+                    throw e
                 }
             }
         }.onFailure {

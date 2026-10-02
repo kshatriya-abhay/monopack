@@ -1,5 +1,6 @@
 package dev.abhay.monopack.render
 
+import androidx.annotation.StringRes
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -10,6 +11,7 @@ import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
+import dev.abhay.monopack.R
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -21,12 +23,12 @@ import kotlin.math.sin
  * The icon shape used for previews. Launchers apply their own mask to icon-pack icons, so the
  * preview can match the user's launcher; these are the common launcher shapes, each distinct.
  */
-enum class IconShape(val label: String) {
-    CIRCLE("Circle"),
-    SQUIRCLE("Squircle"),
-    ROUNDED_SQUARE("Rounded square"),
-    SQUARE("Square"),
-    TEARDROP("Teardrop"),
+enum class IconShape(@StringRes val label: Int) {
+    CIRCLE(R.string.shape_circle),
+    SQUIRCLE(R.string.shape_squircle),
+    ROUNDED_SQUARE(R.string.shape_rounded_square),
+    SQUARE(R.string.shape_square),
+    TEARDROP(R.string.shape_teardrop),
     ;
 
     val shape: Shape

@@ -20,6 +20,7 @@ import dev.abhay.monopack.newapps.NewAppJob
 import dev.abhay.monopack.newapps.NewAppStore
 import dev.abhay.monopack.newapps.WatchablePack
 import dev.abhay.monopack.render.IconShape
+import dev.abhay.monopack.util.catching
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -41,6 +42,13 @@ sealed interface PackNameWarning {
     data object Conflicts : PackNameWarning
 }
 
+/** What went wrong with the library folder (the screens word it). */
+sealed interface LibraryError {
+    data class CantRead(val folder: String) : LibraryError
+
+    data object CantKeepAccess : LibraryError
+}
+
 data class LibraryState(
     val loading: Boolean = true,
     /** The library folder (a SAF tree URI), or null before onboarding. */
@@ -52,7 +60,7 @@ data class LibraryState(
     val installed: Map<String, InstalledPack> = emptyMap(),
     val selected: Set<String> = emptySet(),
     val lastTheme: LastTheme? = null,
-    val error: String? = null,
+    val error: LibraryError? = null,
     /** The first-apply explanation was turned off. */
     val applyHintDismissed: Boolean = false,
     /** The preview icon shape (all previews; exports are unaffected). */
@@ -130,14 +138,14 @@ class LibraryViewModel(
     fun refresh() {
         refreshJob?.cancel()
         refreshJob = viewModelScope.launch {
-            val tree = runCatching { store.loadTree() }.getOrNull()
+            val tree = catching { store.loadTree() }.getOrNull()
             val access = tree != null && withContext(io) { folder.hasAccess(tree) }
-            val lastTheme = runCatching { selections.loadLastTheme() }.getOrNull()
-            val hintDismissed = runCatching { store.loadApplyHintDismissed() }.getOrDefault(false)
-            val shape = IconShape.fromName(runCatching { store.loadIconShape() }.getOrNull())
-            val alerts = runCatching { newApps?.loadEnabled() }.getOrNull() ?: false
-            val watched = runCatching { newApps?.loadWatchedPack() }.getOrNull()
-            val installStep = runCatching { store.loadInstallStepDone() }.getOrDefault(true)
+            val lastTheme = catching { selections.loadLastTheme() }.getOrNull()
+            val hintDismissed = catching { store.loadApplyHintDismissed() }.getOrDefault(false)
+            val shape = IconShape.fromName(catching { store.loadIconShape() }.getOrNull())
+            val alerts = catching { newApps?.loadEnabled() }.getOrNull() ?: false
+            val watched = catching { newApps?.loadWatchedPack() }.getOrNull()
+            val installStep = catching { store.loadInstallStepDone() }.getOrDefault(true)
             // A newer refresh cancels this one; runCatching above turns that into defaults (no
             // folder), which mustn't be shown (it flashed onboarding).
             ensureActive()
@@ -148,10 +156,10 @@ class LibraryViewModel(
                 _state.update { it.copy(loading = false, tree = tree, hasAccess = false, lastTheme = lastTheme, items = emptyList()) }
                 return@launch
             }
-            val records = runCatching { store.loadRecords() }.getOrDefault(emptyMap())
-            val files = runCatching { folder.list(tree) }
+            val records = catching { store.loadRecords() }.getOrDefault(emptyMap())
+            val files = catching { folder.list(tree) }
             val items = Library.merge(records.values, files.getOrDefault(emptyList()))
-            val label = runCatching { folder.label(tree) }.getOrDefault("")
+            val label = catching { folder.label(tree) }.getOrDefault("")
             ensureActive()
             _state.update { s ->
                 s.copy(
@@ -162,7 +170,7 @@ class LibraryViewModel(
                     items = items,
                     selected = s.selected.intersect(items.map { it.fileName }.toSet()),
                     lastTheme = lastTheme,
-                    error = files.exceptionOrNull()?.let { "Can't read $label" },
+                    error = files.exceptionOrNull()?.let { LibraryError.CantRead(label) },
                 )
             }
             refreshExtras(items)
@@ -174,14 +182,14 @@ class LibraryViewModel(
         val installed = withContext(io) {
             items.mapNotNull { item ->
                 item.packageName?.takeIf { item.kind == ExportKind.ICON_PACK }?.let { pkg ->
-                    item.fileName to runCatching { packInstalls.status(pkg) }.getOrDefault(InstalledPack.NOT_INSTALLED)
+                    item.fileName to catching { packInstalls.status(pkg) }.getOrDefault(InstalledPack.NOT_INSTALLED)
                 }
             }.toMap()
         }
-        val packs = runCatching { listPacks() }.getOrDefault(emptyList())
+        val packs = catching { listPacks() }.getOrDefault(emptyList())
         currentCoroutineContext().ensureActive()
         _state.update { it.copy(installed = installed, packs = packs) }
-        val found = runCatching { findNewApps() }.onFailure { Log.w(TAG, "New-app check failed", it) }.getOrNull()
+        val found = catching { findNewApps() }.onFailure { Log.w(TAG, "New-app check failed", it) }.getOrNull()
             ?.takeIf { f -> f.apps.isNotEmpty() && !dismissedNewApps.containsAll(f.apps.map { it.component }) }
         currentCoroutineContext().ensureActive()
         _state.update { it.copy(newApps = found) }
@@ -191,9 +199,9 @@ class LibraryViewModel(
     fun onFolderPicked(treeUri: String) {
         viewModelScope.launch {
             val old = _state.value.tree
-            runCatching { withContext(io) { folder.takeAccess(treeUri) } }.onFailure {
+            catching { withContext(io) { folder.takeAccess(treeUri) } }.onFailure {
                 Log.w(TAG, "Couldn't keep access to the folder", it)
-                _state.update { s -> s.copy(error = "Couldn't keep access to that folder") }
+                _state.update { s -> s.copy(error = LibraryError.CantKeepAccess) }
                 return@launch
             }
             if (old != null && old != treeUri) withContext(io) { folder.releaseAccess(old) }
@@ -216,7 +224,7 @@ class LibraryViewModel(
         val chosen = s.items.filter { it.fileName in s.selected }
         viewModelScope.launch {
             chosen.forEach { item -> item.file?.let { folder.delete(it.documentUri) } }
-            runCatching { store.removeRecords(chosen.map { it.fileName }) }
+            catching { store.removeRecords(chosen.map { it.fileName }) }
             _state.update { it.copy(selected = emptySet()) }
             refresh()
         }
@@ -225,7 +233,7 @@ class LibraryViewModel(
     /** Forgets an item whose file is missing. */
     fun removeMissing(item: LibraryItem) {
         viewModelScope.launch {
-            runCatching { store.removeRecords(listOf(item.fileName)) }
+            catching { store.removeRecords(listOf(item.fileName)) }
             refresh()
         }
     }
@@ -235,7 +243,7 @@ class LibraryViewModel(
         val path = _state.value.pathFor(item) ?: return
         val theme = LastTheme(item.title, item.style ?: dev.abhay.monopack.model.IconStyle.LIGHT, path)
         _state.update { it.copy(lastTheme = theme) }
-        viewModelScope.launch { runCatching { selections.saveLastTheme(theme) } }
+        viewModelScope.launch { catching { selections.saveLastTheme(theme) } }
     }
 
     /**
@@ -246,7 +254,7 @@ class LibraryViewModel(
         val normalized = name.trim().ifEmpty { "Monopack" }
         val packageName = PackNaming.packageFor(normalized)
         val existing = _state.value.items.firstOrNull { !it.missing && Library.isSamePack(it, normalized, packageName) }
-        return when (runCatching { packInstalls.status(packageName) }.getOrDefault(InstalledPack.NOT_INSTALLED)) {
+        return when (catching { packInstalls.status(packageName) }.getOrDefault(InstalledPack.NOT_INSTALLED)) {
             InstalledPack.OTHER_SIGNER -> PackNameWarning.Conflicts
             InstalledPack.SAME_SIGNER -> PackNameWarning.Replaces(existing?.createdAt)
             InstalledPack.NOT_INSTALLED -> existing?.let { PackNameWarning.Replaces(it.createdAt) }
@@ -255,19 +263,19 @@ class LibraryViewModel(
 
     fun setIconShape(shape: IconShape) {
         _state.update { it.copy(iconShape = shape) }
-        viewModelScope.launch { runCatching { store.saveIconShape(shape.name) } }
+        viewModelScope.launch { catching { store.saveIconShape(shape.name) } }
     }
 
     /** "Don't show again" on the first-apply explanation. */
     fun dismissApplyHint() {
         _state.update { it.copy(applyHintDismissed = true) }
-        viewModelScope.launch { runCatching { store.saveApplyHintDismissed() } }
+        viewModelScope.launch { catching { store.saveApplyHintDismissed() } }
     }
 
     /** Settings: show the HyperOS "pick the theme file" help again. */
     fun resetApplyHint() {
         _state.update { it.copy(applyHintDismissed = false) }
-        viewModelScope.launch { runCatching { store.saveApplyHintDismissed(false) } }
+        viewModelScope.launch { catching { store.saveApplyHintDismissed(false) } }
     }
 
     /** Hides the new-apps banner until other new apps are installed. */
@@ -279,14 +287,14 @@ class LibraryViewModel(
     /** Onboarding: the install-permission step was completed or skipped. */
     fun finishInstallStep() {
         _state.update { it.copy(installStepDone = true) }
-        viewModelScope.launch { runCatching { store.saveInstallStepDone() } }
+        viewModelScope.launch { catching { store.saveInstallStepDone() } }
     }
 
     /** Settings: the icon pack to check new apps against. */
     fun setWatchedPack(packageName: String) {
         _state.update { it.copy(watchedPack = packageName) }
         viewModelScope.launch {
-            runCatching { newApps?.saveWatchedPack(packageName) }
+            catching { newApps?.saveWatchedPack(packageName) }
             refresh()
         }
     }
@@ -295,12 +303,12 @@ class LibraryViewModel(
     fun setNewAppAlerts(enabled: Boolean) {
         _state.update { it.copy(newAppAlerts = enabled) }
         viewModelScope.launch {
-            runCatching { newApps?.saveEnabled(enabled) }
-            runCatching { scheduleNewApps(enabled) }.onFailure { Log.w(TAG, "Couldn't schedule the new-app check", it) }
+            catching { newApps?.saveEnabled(enabled) }
+            catching { scheduleNewApps(enabled) }.onFailure { Log.w(TAG, "Couldn't schedule the new-app check", it) }
         }
     }
 
-    /** Shows the folder in a file manager (to install a pack). */
+    /** Shows the folder in a file manager (Settings → Open folder). */
     fun openFolder(): Boolean = _state.value.tree?.let { folder.open(it) } ?: false
 
     companion object {

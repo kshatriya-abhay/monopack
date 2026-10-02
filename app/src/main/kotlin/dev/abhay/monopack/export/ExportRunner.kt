@@ -11,6 +11,7 @@ import dev.abhay.monopack.model.IconPalette
 import dev.abhay.monopack.model.IconStyle
 import dev.abhay.monopack.model.Selection
 import dev.abhay.monopack.render.IconShape
+import dev.abhay.monopack.util.catching
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -165,7 +166,7 @@ class ExportRunner(
         // Until one is applied, Reapply uses the new export (the preferred style's file for Both).
         val newest = files.firstOrNull { it.style == work.preferredStyle } ?: files.first()
         val lastTheme = LastTheme(newest.title, newest.style ?: work.preferredStyle, newest.absolutePath)
-        runCatching { store.saveLastTheme(lastTheme) }.onFailure { Log.w(TAG, "Saving the last theme failed", it) }
+        catching { store.saveLastTheme(lastTheme) }.onFailure { Log.w(TAG, "Saving the last theme failed", it) }
         return ExportState.Done(files, lastTheme)
     }
 
@@ -181,7 +182,7 @@ class ExportRunner(
             ExportRecord(
                 saved.name, ExportKind.ICON_PACK, request.name, request.style, System.currentTimeMillis(), request.apps.size,
                 request.iconPalette.background, request.iconPalette.foreground, request.packageName, request.versionCode,
-                shape = runCatching { library.loadIconShape() }.getOrNull() ?: IconShape.DEFAULT.name,
+                shape = catching { library.loadIconShape() }.getOrNull() ?: IconShape.DEFAULT.name,
                 selection = work.selection,
             ),
         )
@@ -190,7 +191,7 @@ class ExportRunner(
     }
 
     private suspend fun record(record: ExportRecord) {
-        runCatching { library.saveRecord(record) }.onFailure { Log.w(TAG, "Saving the library record failed", it) }
+        catching { library.saveRecord(record) }.onFailure { Log.w(TAG, "Saving the library record failed", it) }
     }
 
     private companion object {

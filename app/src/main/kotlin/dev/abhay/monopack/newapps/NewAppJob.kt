@@ -8,6 +8,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.util.Log
 import dev.abhay.monopack.appContainer
+import dev.abhay.monopack.util.catching
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -26,7 +27,7 @@ class NewAppJob : JobService() {
 
     override fun onStartJob(params: JobParameters): Boolean {
         running = scope.launch {
-            runCatching { applicationContext.appContainer.newAppCheck.run() }.onFailure { Log.w("Monopack", "New-app check failed", it) }
+            catching { applicationContext.appContainer.newAppCheck.run() }.onFailure { Log.w("Monopack", "New-app check failed", it) }
             jobFinished(params, false)
         }
         return true

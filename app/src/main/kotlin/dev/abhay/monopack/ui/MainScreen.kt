@@ -54,6 +54,9 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -62,6 +65,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import dev.abhay.monopack.R
 import dev.abhay.monopack.export.ExportState
 import dev.abhay.monopack.hyperos.ApplyTheme
 import dev.abhay.monopack.hyperos.ThemeApplier
@@ -87,6 +91,7 @@ fun MainScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val resources = LocalResources.current
     var exportOptions by remember { mutableStateOf<ExportOptions?>(null) }
     var collapseRequests by remember { mutableIntStateOf(0) }
     var expandRequests by remember { mutableIntStateOf(0) }
@@ -113,16 +118,16 @@ fun MainScreen(
                 Column {
                     if (state.selecting) {
                         TopAppBar(
-                            title = { Text("${state.selected.size} selected") },
+                            title = { Text(pluralStringResource(R.plurals.selection_count, state.selected.size, state.selected.size)) },
                             navigationIcon = {
-                                TooltipIconButton(Icons.Filled.Close, "Cancel", viewModel::clearSelection)
+                                TooltipIconButton(Icons.Filled.Close, stringResource(R.string.action_cancel), viewModel::clearSelection)
                             },
                             actions = {
-                                TooltipIconButton(Symbols.SelectAll, "Select all", viewModel::selectAll)
+                                TooltipIconButton(Symbols.SelectAll, stringResource(R.string.action_select_all), viewModel::selectAll)
                                 if (state.selectionHasEdits) {
-                                    TooltipIconButton(Symbols.Reset, "Reset", viewModel::resetSelectedEdits)
+                                    TooltipIconButton(Symbols.Reset, stringResource(R.string.action_reset), viewModel::resetSelectedEdits)
                                 }
-                                TooltipIconButton(Icons.Filled.Edit, "Edit icon", viewModel::editSelection, enabled = state.canEditSelection)
+                                TooltipIconButton(Icons.Filled.Edit, stringResource(R.string.editor_title), viewModel::editSelection, enabled = state.canEditSelection)
                             },
                             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
                         )
@@ -132,7 +137,7 @@ fun MainScreen(
                                 TextField(
                                     value = state.query,
                                     onValueChange = viewModel::setQuery,
-                                    placeholder = { Text("Search apps") },
+                                    placeholder = { Text(stringResource(R.string.create_search)) },
                                     singleLine = true,
                                     colors = TextFieldDefaults.colors(
                                         focusedContainerColor = Color.Transparent,
@@ -146,9 +151,9 @@ fun MainScreen(
                                 )
                                 LaunchedEffect(Unit) { searchFocus.requestFocus() }
                             },
-                            navigationIcon = { TooltipIconButton(Icons.Filled.Close, "Close search", ::closeSearch) },
+                            navigationIcon = { TooltipIconButton(Icons.Filled.Close, stringResource(R.string.create_close_search), ::closeSearch) },
                             actions = {
-                                if (state.query.isNotEmpty()) TooltipIconButton(Symbols.Clear, "Clear", { viewModel.setQuery("") })
+                                if (state.query.isNotEmpty()) TooltipIconButton(Symbols.Clear, stringResource(R.string.action_clear), { viewModel.setQuery("") })
                             },
                         )
                     } else {
@@ -156,10 +161,10 @@ fun MainScreen(
                             title = {
                                 val editing = state.editing
                                 if (editing == null) {
-                                    Text("Create")
+                                    Text(stringResource(R.string.library_create))
                                 } else {
                                     Column {
-                                        Text("Edit icon pack")
+                                        Text(stringResource(R.string.create_edit_pack))
                                         Text(
                                             editing.name,
                                             style = MaterialTheme.typography.bodySmall,
@@ -171,16 +176,16 @@ fun MainScreen(
                                 }
                             },
                             navigationIcon = {
-                                TooltipIconButton(Icons.AutoMirrored.Filled.ArrowBack, "Back", onBack)
+                                TooltipIconButton(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back), onBack)
                             },
                             actions = {
-                                TooltipIconButton(Icons.Filled.Search, "Search", { searching = true })
-                                TooltipIconButton(Icons.Filled.Refresh, "Refresh", viewModel::refresh, enabled = state.iconsReady)
+                                TooltipIconButton(Icons.Filled.Search, stringResource(R.string.action_search), { searching = true })
+                                TooltipIconButton(Icons.Filled.Refresh, stringResource(R.string.action_refresh), viewModel::refresh, enabled = state.iconsReady)
                                 Button(
                                     onClick = { exportOptions = viewModel.defaultExportOptions() },
                                     enabled = state.exportEnabled,
                                     modifier = Modifier.padding(end = 8.dp),
-                                ) { Text(if (state.editing != null) "Update" else "Export") }
+                                ) { Text(if (state.editing != null) stringResource(R.string.action_update) else stringResource(R.string.export_title)) }
                             },
                         )
                     }
@@ -215,7 +220,7 @@ fun MainScreen(
                 state.items.isEmpty() -> Box(
                     Modifier.fillMaxSize().padding(padding),
                     contentAlignment = Alignment.Center,
-                ) { Text("No launcher apps found") }
+                ) { Text(stringResource(R.string.create_no_apps)) }
                 else -> AppGrid(
                     items = state.visibleItems,
                     colorsFor = { item -> if (!previewed) null else state.paletteFor(item.app.key)?.toIconColors() },
@@ -241,7 +246,7 @@ fun MainScreen(
                             expandRequests++
                         },
                         onDismissDefaultPaletteBanner = viewModel::dismissDefaultPaletteBanner,
-                        emptyMessage = if (state.query.isNotBlank() && state.visibleItems.isEmpty()) "No apps match \"${state.query.trim()}\"" else null,
+                        emptyMessage = if (state.query.isNotBlank() && state.visibleItems.isEmpty()) stringResource(R.string.create_no_match, state.query.trim()) else null,
                     ),
                     contentPadding = padding,
                     selected = state.selected,
@@ -249,14 +254,14 @@ fun MainScreen(
                     onItemClick = { item ->
                         when {
                             state.selecting -> viewModel.toggleSelection(item)
-                            !previewed -> Toast.makeText(context, "Icons are still loading", Toast.LENGTH_SHORT).show()
-                            item.glyph == null -> Toast.makeText(context, "No icon to edit yet", Toast.LENGTH_SHORT).show()
+                            !previewed -> Toast.makeText(context, resources.getString(R.string.create_still_loading), Toast.LENGTH_SHORT).show()
+                            item.glyph == null -> Toast.makeText(context, resources.getString(R.string.create_no_icon_yet), Toast.LENGTH_SHORT).show()
                             else -> viewModel.openEditor(item.app.key)
                         }
                     },
                     // Selecting only makes sense once the themed icons are shown.
                     onItemLongClick = { item ->
-                        if (previewed) viewModel.onLongPress(item) else Toast.makeText(context, "Icons are still loading", Toast.LENGTH_SHORT).show()
+                        if (previewed) viewModel.onLongPress(item) else Toast.makeText(context, resources.getString(R.string.create_still_loading), Toast.LENGTH_SHORT).show()
                     },
                     // Scrolling the icons collapses the control panel.
                     onUserScroll = { collapseRequests++ },
@@ -327,10 +332,10 @@ private fun ErrorState(message: String, onRetry: () -> Unit, padding: PaddingVal
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("Couldn't load apps", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.create_load_failed), style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
         Text(message, style = MaterialTheme.typography.bodyMedium)
         Spacer(Modifier.height(16.dp))
-        Button(onClick = onRetry) { Text("Retry") }
+        Button(onClick = onRetry) { Text(stringResource(R.string.action_retry)) }
     }
 }

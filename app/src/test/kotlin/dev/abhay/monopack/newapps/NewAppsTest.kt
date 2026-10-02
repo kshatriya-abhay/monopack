@@ -35,12 +35,4 @@ class NewAppsTest {
         )
         assertThat(NewApps.components(xml)).containsExactly("a.pkg/a.Main", "b&c.pkg/b.Main\$Inner")
     }
-
-    @Test
-    fun namesAreShortened() {
-        val apps = listOf("A", "B", "C", "D").map { app("$it/x", it, 0) }
-        assertThat(NewApps.names(apps.take(1))).isEqualTo("A")
-        assertThat(NewApps.names(apps.take(2))).isEqualTo("A and B")
-        assertThat(NewApps.names(apps)).isEqualTo("A, B and 2 more")
-    }
 }

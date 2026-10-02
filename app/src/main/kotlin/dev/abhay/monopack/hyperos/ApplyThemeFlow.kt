@@ -21,9 +21,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import dev.abhay.monopack.R
 
 /** A theme to apply: its filesystem path (for Theme Manager) and file name (for the user). */
 data class ThemeToApply(val path: String, val fileName: String, val onApplied: () -> Unit = {})
@@ -42,15 +45,16 @@ fun interface ApplyTheme {
 @Composable
 fun rememberApplyThemeFlow(folderLabel: String, hintDismissed: Boolean, onDontShowAgain: () -> Unit): ApplyTheme {
     val context = LocalContext.current
+    val resources = LocalResources.current
     var pending by remember { mutableStateOf<ThemeToApply?>(null) }
     val dismissed by rememberUpdatedState(hintDismissed)
 
     fun launch(theme: ThemeToApply) {
         if (ThemeApplier.apply(context, theme.path)) {
             theme.onApplied()
-            Toast.makeText(context, "Pick ${theme.fileName}", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, resources.getString(R.string.apply_pick_file, theme.fileName), Toast.LENGTH_LONG).show()
         } else {
-            Toast.makeText(context, "Theme Manager isn't available", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, resources.getString(R.string.apply_no_theme_manager), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -58,10 +62,10 @@ fun rememberApplyThemeFlow(folderLabel: String, hintDismissed: Boolean, onDontSh
         var dontShow by remember { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { pending = null },
-            title = { Text("Pick the theme file") },
+            title = { Text(stringResource(R.string.apply_title)) },
             text = {
                 Column {
-                    Text("Theme Manager opens next and asks you to choose the theme. Pick this file:")
+                    Text(stringResource(R.string.apply_explain))
                     Spacer(Modifier.height(8.dp))
                     Text(
                         if (folderLabel.isEmpty()) theme.fileName else "$folderLabel/${theme.fileName}",
@@ -69,14 +73,14 @@ fun rememberApplyThemeFlow(folderLabel: String, hintDismissed: Boolean, onDontSh
                         fontWeight = FontWeight.Medium,
                     )
                     Spacer(Modifier.height(12.dp))
-                    Text(HYPEROS_RESET_NOTE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.hyperos_reset_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(12.dp))
                     Row(
                         Modifier.toggleable(value = dontShow, role = Role.Checkbox, onValueChange = { dontShow = it }),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Checkbox(checked = dontShow, onCheckedChange = null)
-                        Text("Don't show again")
+                        Text(stringResource(R.string.apply_dont_show))
                     }
                 }
             },
@@ -85,9 +89,9 @@ fun rememberApplyThemeFlow(folderLabel: String, hintDismissed: Boolean, onDontSh
                     pending = null
                     if (dontShow) onDontShowAgain()
                     launch(theme)
-                }) { Text("Proceed") }
+                }) { Text(stringResource(R.string.apply_proceed)) }
             },
-            dismissButton = { TextButton(onClick = { pending = null }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { pending = null }) { Text(stringResource(R.string.action_cancel)) } },
         )
     }
 

@@ -51,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -58,6 +59,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.abhay.monopack.R
 import dev.abhay.monopack.glyph.MaskContrast
 import dev.abhay.monopack.model.GlyphSource
 import dev.abhay.monopack.model.IconEdit
@@ -126,7 +128,7 @@ fun IconEditorScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text("Edit icon")
+                        Text(stringResource(R.string.editor_title))
                         Text(
                             item.app.label,
                             style = MaterialTheme.typography.bodyMedium,
@@ -136,8 +138,8 @@ fun IconEditorScreen(
                         )
                     }
                 },
-                navigationIcon = { TooltipIconButton(Icons.Filled.Close, "Cancel", { close() }) },
-                actions = { TooltipIconButton(Icons.Filled.Check, "Save", { onSave(draft) }) },
+                navigationIcon = { TooltipIconButton(Icons.Filled.Close, stringResource(R.string.action_cancel), { close() }) },
+                actions = { TooltipIconButton(Icons.Filled.Check, stringResource(R.string.action_save), { onSave(draft) }) },
             )
         },
     ) { padding ->
@@ -157,71 +159,73 @@ fun IconEditorScreen(
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 24.dp, vertical = 16.dp),
             ) {
-            EditorLabel("Base icon")
+            EditorLabel(stringResource(R.string.editor_base))
             SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
                 IconStyle.entries.forEachIndexed { index, style ->
                     SegmentedButton(
                         selected = base == style,
                         onClick = { base = style },
                         shape = SegmentedButtonDefaults.itemShape(index, IconStyle.entries.size),
-                    ) { Text(if (style == IconStyle.LIGHT) "Light icon" else "Dark icon") }
+                    ) { Text(if (style == IconStyle.LIGHT) stringResource(R.string.editor_light_icon) else stringResource(R.string.editor_dark_icon)) }
                 }
             }
             EditorHint(
-                if (autoNight) "Used in light mode. In dark mode, the other style is used with the same adjustments." else "Used in both light and dark mode.",
+                if (autoNight) stringResource(R.string.editor_base_auto) else stringResource(R.string.editor_base_both),
                 Modifier.padding(top = 6.dp),
             )
             Spacer(Modifier.height(24.dp))
 
             SwitchRow(
-                title = "Auto night mode",
-                hint = "Show a dark-mode version of this icon in dark mode. Off: the same icon in both modes.",
+                title = stringResource(R.string.editor_auto_night),
+                hint = stringResource(R.string.editor_auto_night_hint),
                 checked = autoNight,
                 onChange = { autoNight = it },
             )
             Spacer(Modifier.height(24.dp))
 
             SwitchRow(
-                title = "Invert glyph",
-                hint = "Swaps the glyph and plate areas. Use it when the icon looks filled in.",
+                title = stringResource(R.string.editor_invert),
+                hint = stringResource(R.string.editor_invert_hint),
                 checked = inverted,
                 onChange = { inverted = it },
             )
             Spacer(Modifier.height(24.dp))
 
+            val contrastTitle = stringResource(R.string.editor_contrast)
+            val contrastText = contrastLabel(contrast)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                EditorLabel("Glyph contrast", Modifier.weight(1f))
+                EditorLabel(contrastTitle, Modifier.weight(1f))
                 Text(
-                    contrastLabel(contrast),
+                    contrastText,
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            EditorHint("Separates glyph and plate when the icon's colours blend together.")
+            EditorHint(stringResource(R.string.editor_contrast_hint))
             Slider(
                 value = contrast.toFloat(),
                 onValueChange = { contrast = it.roundToInt() },
                 valueRange = 0f..MaskContrast.MAX.toFloat(),
                 modifier = Modifier.semantics {
-                    contentDescription = "Glyph contrast"
-                    stateDescription = contrastLabel(contrast)
+                    contentDescription = contrastTitle
+                    stateDescription = contrastText
                 },
             )
-            EndLabels("Original", "Strongest")
+            EndLabels(stringResource(R.string.editor_contrast_min), stringResource(R.string.editor_contrast_max))
             Spacer(Modifier.height(24.dp))
 
-            ToneSlider("Glyph colour", edited.foreground, glyphOffset, glyphAllowed) { requestedGlyph = it }
+            ToneSlider(stringResource(R.string.editor_glyph_colour), edited.foreground, glyphOffset, glyphAllowed) { requestedGlyph = it }
             Spacer(Modifier.height(24.dp))
-            ToneSlider("Plate colour", edited.background, plateOffset, plateAllowed) { requestedPlate = it }
+            ToneSlider(stringResource(R.string.editor_plate_colour), edited.background, plateOffset, plateAllowed) { requestedPlate = it }
 
             if (edit != null) {
                 Spacer(Modifier.height(32.dp))
                 OutlinedButton(onClick = onReset, modifier = Modifier.fillMaxWidth()) {
                     Icon(Symbols.Reset, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
                     Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                    Text("Reset to default")
+                    Text(stringResource(R.string.editor_reset))
                 }
-                EditorHint("Follows the global icon style again, with the default colours.", Modifier.padding(top = 6.dp))
+                EditorHint(stringResource(R.string.editor_reset_hint), Modifier.padding(top = 6.dp))
             }
 
             AppInfo(item)
@@ -232,26 +236,28 @@ fun IconEditorScreen(
     if (confirmDiscard) {
         AlertDialog(
             onDismissRequest = { confirmDiscard = false },
-            title = { Text("Discard changes?") },
+            title = { Text(stringResource(R.string.editor_discard_title)) },
             confirmButton = {
                 TextButton(onClick = {
                     confirmDiscard = false
                     onClose()
-                }) { Text("Discard") }
+                }) { Text(stringResource(R.string.editor_discard)) }
             },
-            dismissButton = { TextButton(onClick = { confirmDiscard = false }) { Text("Keep editing") } },
+            dismissButton = { TextButton(onClick = { confirmDiscard = false }) { Text(stringResource(R.string.editor_keep_editing)) } },
         )
     }
 }
 
 /** "Default", "+4" or "−6" (a real minus sign). */
-fun offsetLabel(offset: Int) = when {
-    offset == 0 -> "Default"
+@Composable
+private fun offsetLabel(offset: Int) = when {
+    offset == 0 -> stringResource(R.string.editor_offset_default)
     offset > 0 -> "+$offset"
     else -> "−${-offset}"
 }
 
-private fun contrastLabel(contrast: Int) = if (contrast == 0) "Off" else "$contrast%"
+@Composable
+private fun contrastLabel(contrast: Int) = if (contrast == 0) stringResource(R.string.editor_contrast_off) else stringResource(R.string.editor_contrast_value, contrast)
 
 /** A titled switch row (the whole row toggles). */
 @Composable
@@ -285,10 +291,10 @@ private fun EditorPreview(glyph: ImageBitmap?, label: String, sides: List<Drawer
     val right = sides.getOrNull(1)
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (edit.autoNight) {
-            PreviewRow("Light mode", dark = false, left to light.toIconColors(), glyph to editedLight, right to light.toIconColors(), label)
-            PreviewRow("Dark mode", dark = true, left to dark.toIconColors(), glyph to editedDark, right to dark.toIconColors(), label)
+            PreviewRow(stringResource(R.string.mode_light), dark = false, left to light.toIconColors(), glyph to editedLight, right to light.toIconColors(), label)
+            PreviewRow(stringResource(R.string.mode_dark), dark = true, left to dark.toIconColors(), glyph to editedDark, right to dark.toIconColors(), label)
         } else {
-            PreviewRow("Light mode", dark = false, left to light.toIconColors(), glyph to editedLight, right to dark.toIconColors(), label, titleEnd = "Dark mode")
+            PreviewRow(stringResource(R.string.mode_light), dark = false, left to light.toIconColors(), glyph to editedLight, right to dark.toIconColors(), label, titleEnd = stringResource(R.string.mode_dark))
         }
     }
 }
@@ -306,12 +312,13 @@ private fun PreviewRow(
 ) {
     val background = if (dark) Color(0xFF1A1C20) else MaterialTheme.colorScheme.surfaceContainerHigh
     val textColor = if (dark) Color(0xFFE2E2E9) else MaterialTheme.colorScheme.onSurfaceVariant
+    val description = if (titleEnd == null) stringResource(R.string.editor_preview, title) else stringResource(R.string.editor_preview_two, title, titleEnd)
     Column(
         Modifier
             .fillMaxWidth()
             .background(background, RoundedCornerShape(20.dp))
             .padding(horizontal = 12.dp, vertical = 10.dp)
-            .semantics { contentDescription = if (titleEnd == null) "$title preview" else "$title and $titleEnd preview" },
+            .semantics { contentDescription = description },
     ) {
         Row(Modifier.fillMaxWidth()) {
             Text(title, style = MaterialTheme.typography.labelMedium, color = textColor, modifier = Modifier.weight(1f))
@@ -369,6 +376,8 @@ private fun EditorLabel(text: String, modifier: Modifier = Modifier) {
 /** A tone-offset slider for one colour of the icon, with a swatch of the resulting colour. */
 @Composable
 private fun ToneSlider(label: String, color: Int, offset: Int, allowed: IntRange, onChange: (Int) -> Unit) {
+    val offsetText = offsetLabel(offset)
+    val description = stringResource(R.string.editor_brightness, label)
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(
             Modifier
@@ -380,7 +389,7 @@ private fun ToneSlider(label: String, color: Int, offset: Int, allowed: IntRange
         Spacer(Modifier.width(10.dp))
         EditorLabel(label, Modifier.weight(1f))
         Text(
-            "tone ${IconEdits.displayTone(color)} · ${offsetLabel(offset)}",
+            stringResource(R.string.editor_tone, IconEdits.displayTone(color), offsetText),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 8.dp),
@@ -393,11 +402,11 @@ private fun ToneSlider(label: String, color: Int, offset: Int, allowed: IntRange
         valueRange = allowed.first.toFloat()..allowed.last.toFloat().coerceAtLeast(allowed.first + 0.001f),
         enabled = allowed.last > allowed.first,
         modifier = Modifier.semantics {
-            contentDescription = "$label brightness"
-            stateDescription = offsetLabel(offset)
+            contentDescription = description
+            stateDescription = offsetText
         },
     )
-    EndLabels("Darker", "Lighter")
+    EndLabels(stringResource(R.string.editor_darker), stringResource(R.string.editor_lighter))
 }
 
 /** About the app and its icon: names to copy, its profile, and where the glyph came from. */
@@ -407,36 +416,36 @@ private fun AppInfo(item: DrawerItem) {
     Spacer(Modifier.height(32.dp))
     HorizontalDivider()
     Spacer(Modifier.height(16.dp))
-    Text("App info", style = MaterialTheme.typography.titleSmall)
+    Text(stringResource(R.string.info_title), style = MaterialTheme.typography.titleSmall)
     Spacer(Modifier.height(8.dp))
     SelectionContainer {
         Column {
-            InfoLine("App", app.label)
-            InfoLine("Package", app.packageName)
-            InfoLine("Activity", app.component.shortClassName)
+            InfoLine(stringResource(R.string.info_app), app.label)
+            InfoLine(stringResource(R.string.info_package), app.packageName)
+            InfoLine(stringResource(R.string.info_activity), app.component.shortClassName)
         }
     }
-    InfoLine("Profile", if (app.user == null) "Main" else "Work")
-    InfoLine("Launcher entry", if (app.isMainActivity) "Primary" else "Extra (the app has more than one)")
+    InfoLine(stringResource(R.string.info_profile), if (app.user == null) stringResource(R.string.info_profile_main) else stringResource(R.string.info_profile_work))
+    InfoLine(stringResource(R.string.info_entry), if (app.isMainActivity) stringResource(R.string.info_entry_primary) else stringResource(R.string.info_entry_extra))
     item.info?.let { info ->
-        val kind = if (info.kind == IconKind.ADAPTIVE) "Adaptive" else "Legacy"
-        InfoLine("Icon", if (info.hasMonochrome) "$kind, with a monochrome layer" else kind)
+        val kind = if (info.kind == IconKind.ADAPTIVE) stringResource(R.string.info_icon_adaptive) else stringResource(R.string.info_icon_legacy)
+        InfoLine(stringResource(R.string.info_icon), if (info.hasMonochrome) stringResource(R.string.info_icon_with_mono, kind) else kind)
         InfoLine(
-            "Loaded from",
+            stringResource(R.string.info_loaded_from),
             when (info.origin) {
-                IconOrigin.RESOURCES -> "App resources"
-                IconOrigin.PACKAGE_MANAGER -> "Package manager (may be themed)"
-                IconOrigin.DEFAULT -> "System default icon"
+                IconOrigin.RESOURCES -> stringResource(R.string.info_origin_resources)
+                IconOrigin.PACKAGE_MANAGER -> stringResource(R.string.info_origin_pm)
+                IconOrigin.DEFAULT -> stringResource(R.string.info_origin_default)
             },
         )
     }
     item.glyph?.let { glyph ->
         InfoLine(
-            "Glyph",
+            stringResource(R.string.info_glyph),
             when (glyph.source) {
-                GlyphSource.NATIVE_MONO -> "The app's own monochrome icon"
-                GlyphSource.FORCED_MONO -> "Generated from the coloured icon"
-                GlyphSource.FAILED -> "Couldn't be made (empty plate)"
+                GlyphSource.NATIVE_MONO -> stringResource(R.string.info_glyph_native)
+                GlyphSource.FORCED_MONO -> stringResource(R.string.info_glyph_generated)
+                GlyphSource.FAILED -> stringResource(R.string.info_glyph_failed)
             },
         )
     }

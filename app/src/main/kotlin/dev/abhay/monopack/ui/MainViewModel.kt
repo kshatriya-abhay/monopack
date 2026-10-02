@@ -36,6 +36,7 @@ import dev.abhay.monopack.palette.IconEdits
 import dev.abhay.monopack.palette.PaletteSource
 import dev.abhay.monopack.palette.Seed
 import dev.abhay.monopack.palette.SeedPresets
+import dev.abhay.monopack.util.catching
 import java.io.File
 import java.time.LocalDateTime
 import kotlin.math.ceil
@@ -298,13 +299,13 @@ class MainViewModel(
         }
         viewModelScope.launch {
             editsRestored.await()
-            runCatching { store.saveEdits(_state.value.edits) }.onFailure { Log.w(TAG, "Saving edits failed", it) }
+            catching { store.saveEdits(_state.value.edits) }.onFailure { Log.w(TAG, "Saving edits failed", it) }
         }
     }
 
     /** A glyph for the editor's large preview, sharper than the grid's (null if it fails). */
     suspend fun loadEditorGlyph(app: LauncherApp): ImageBitmap? =
-        withContext(workDispatcher) { runCatching { loader.glyph(app, glyphSizeFor(editorIconPx)) }.getOrNull() }
+        withContext(workDispatcher) { catching { loader.glyph(app, glyphSizeFor(editorIconPx)) }.getOrNull() }
 
     fun setIconStyle(style: IconStyle) = edit { it.copy(pending = it.pending.copy(style = style)) }
 
@@ -399,7 +400,7 @@ class MainViewModel(
         val updatesEditedPack = editing != null && options.target == ExportTarget.ICON_PACK &&
             PackNaming.normalize(options.name) == PackNaming.normalize(editing.name)
         _state.update { it.copy(installWhenDone = updatesEditedPack) }
-        viewModelScope.launch { runCatching { store.saveExportTarget(options.target.name) } }
+        viewModelScope.launch { catching { store.saveExportTarget(options.target.name) } }
         val pairs = s.committedPairs
         val entries = s.items.filter {
             it.glyph != null && it.glyph.source != GlyphSource.FAILED &&
@@ -420,7 +421,7 @@ class MainViewModel(
     /** Copies an exported file to a document the user picked ("Save as…"). */
     fun saveCopy(file: ExportedFile, uri: String, onResult: (Boolean) -> Unit) {
         viewModelScope.launch {
-            val ok = runCatching { saver.copyTo(File(file.cachePath), uri) }
+            val ok = catching { saver.copyTo(File(file.cachePath), uri) }
                 .onFailure { Log.w(TAG, "Save as failed", it) }
                 .isSuccess
             onResult(ok)
@@ -445,16 +446,16 @@ class MainViewModel(
     private fun setLastTheme(theme: LastTheme) {
         _state.update { it.copy(lastTheme = theme, lastThemeAvailable = fileExists(theme.absolutePath)) }
         viewModelScope.launch {
-            runCatching { store.saveLastTheme(theme) }.onFailure { Log.w(TAG, "Saving the last theme failed", it) }
+            catching { store.saveLastTheme(theme) }.onFailure { Log.w(TAG, "Saving the last theme failed", it) }
         }
     }
 
     private suspend fun restoreExportPrefs() {
-        lastTarget = runCatching { store.loadExportTarget() }.getOrNull()?.let { name -> ExportTarget.entries.firstOrNull { it.name == name } }
+        lastTarget = catching { store.loadExportTarget() }.getOrNull()?.let { name -> ExportTarget.entries.firstOrNull { it.name == name } }
     }
 
     private suspend fun restoreLastTheme() {
-        val theme = runCatching { store.loadLastTheme() }.getOrNull() ?: return
+        val theme = catching { store.loadLastTheme() }.getOrNull() ?: return
         // An export or apply during startup is newer than the saved one.
         _state.update { if (it.lastTheme != null) it else it.copy(lastTheme = theme, lastThemeAvailable = fileExists(theme.absolutePath)) }
     }
@@ -489,7 +490,7 @@ class MainViewModel(
     }
 
     private suspend fun restore() {
-        val saved = runCatching { store.load() }.getOrNull()
+        val saved = catching { store.load() }.getOrNull()
         if (selectionSettled || saved == null) {
             selectionSettled = true
             return
@@ -516,7 +517,7 @@ class MainViewModel(
     /** Merges saved edits into the state; edits made meanwhile win. */
     private suspend fun restoreEdits() {
         try {
-            val saved = runCatching { store.loadEdits() }.onFailure { Log.w(TAG, "Loading edits failed", it) }.getOrNull()
+            val saved = catching { store.loadEdits() }.onFailure { Log.w(TAG, "Loading edits failed", it) }.getOrNull()
             if (!saved.isNullOrEmpty()) _state.update { it.copy(edits = saved + it.edits) }
         } finally {
             editsRestored.complete(Unit)

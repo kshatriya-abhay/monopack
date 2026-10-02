@@ -1,5 +1,8 @@
 package dev.abhay.monopack.newapps
 
+import android.content.res.Resources
+import dev.abhay.monopack.R
+
 /** A launcher entry, reduced to what the new-app check needs. */
 data class InstalledApp(
     /** `package/class`, as in an icon pack's `appfilter.xml`. */
@@ -34,14 +37,14 @@ object NewApps {
     fun components(appFilterXml: String): Set<String> =
         COMPONENT.findAll(appFilterXml).map { unescape(it.groupValues[1]) }.toSet()
 
-    /** The notification text: "Swiggy", "Swiggy and Zepto", "Swiggy, Zepto and 3 more". */
-    fun names(apps: List<InstalledApp>): String {
+    /** The apps' names for the banner and notification: "Swiggy", "Swiggy and Zepto", "Swiggy, Zepto and 3 more". */
+    fun names(apps: List<InstalledApp>, resources: Resources): String {
         val labels = apps.map { it.label }
         return when (labels.size) {
             0 -> ""
             1 -> labels[0]
-            2 -> "${labels[0]} and ${labels[1]}"
-            else -> "${labels[0]}, ${labels[1]} and ${labels.size - 2} more"
+            2 -> resources.getString(R.string.new_apps_two, labels[0], labels[1])
+            else -> resources.getQuantityString(R.plurals.new_apps_more, labels.size - 2, labels[0], labels[1], labels.size - 2)
         }
     }
 

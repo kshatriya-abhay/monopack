@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "dev.abhay.monopack"
-    // Latest AndroidX needs API 37 to compile; this doesn't change min (35) or target (36).
+    // Latest AndroidX needs API 37 to compile; this doesn't change min (33) or target (36).
     compileSdk {
         version = release(37) { minorApiLevel = 2 }
     }
@@ -25,6 +25,19 @@ android {
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
+        // The release build (R8-shrunk) installable next to the debug app, with the debug tools,
+        // to check that shrinking doesn't break pack building: ./gradlew installStaging.
+        create("staging") {
+            initWith(getByName("release"))
+            signingConfig = signingConfigs.getByName("debug")
+            applicationIdSuffix = ".staging"
+            matchingFallbacks += "release"
+        }
+    }
+
+    sourceSets.getByName("staging") {
+        kotlin.directories += "src/debug/kotlin"
+        manifest.srcFile("src/debug/AndroidManifest.xml")
     }
 
     compileOptions {

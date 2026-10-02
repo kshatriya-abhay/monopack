@@ -4,15 +4,16 @@ import android.app.Application
 import android.content.Context
 import dev.abhay.monopack.apps.IconSourceLoader
 import dev.abhay.monopack.apps.LauncherAppRepository
+import dev.abhay.monopack.data.BackupFiles
 import dev.abhay.monopack.data.DataStoreSelectionStore
 import dev.abhay.monopack.export.AndroidPackInstalls
 import dev.abhay.monopack.export.DownloadsSaver
 import dev.abhay.monopack.export.ExportRunner
 import dev.abhay.monopack.export.ExportService
 import dev.abhay.monopack.export.IconPackExporter
-import dev.abhay.monopack.hyperos.MtzExporter
 import dev.abhay.monopack.export.PackInstaller
 import dev.abhay.monopack.export.PackSigner
+import dev.abhay.monopack.hyperos.MtzExporter
 import dev.abhay.monopack.library.DataStoreLibraryStore
 import dev.abhay.monopack.library.FolderSaver
 import dev.abhay.monopack.library.SafLibraryFolder
@@ -21,6 +22,7 @@ import dev.abhay.monopack.newapps.NewAppCheck
 import dev.abhay.monopack.newapps.NewAppJob
 import dev.abhay.monopack.palette.PaletteProvider
 import dev.abhay.monopack.ui.DrawerItemLoader
+import dev.abhay.monopack.util.catching
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -33,7 +35,7 @@ class MonopackApp : Application() {
         super.onCreate()
         // Re-sync the new-app check with its setting (e.g. after an update cleared scheduled jobs).
         CoroutineScope(Dispatchers.IO).launch {
-            runCatching { NewAppJob.sync(this@MonopackApp, container.newAppStore.loadEnabled()) }
+            catching { NewAppJob.sync(this@MonopackApp, container.newAppStore.loadEnabled()) }
         }
     }
 }
@@ -52,6 +54,7 @@ class AppContainer(context: Context) {
     private val packSigner = PackSigner()
     val packInstalls = AndroidPackInstalls(context, packSigner)
     val packInstaller = PackInstaller(context)
+    val backupFiles = BackupFiles(context.contentResolver)
     val newAppStore = DataStoreNewAppStore(context)
     val newAppCheck = NewAppCheck(context, newAppStore, packInstalls)
 

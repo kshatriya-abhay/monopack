@@ -1,6 +1,5 @@
 package dev.abhay.monopack.ui
 
-import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -12,7 +11,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -22,7 +20,6 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.abhay.monopack.appContainer
-import dev.abhay.monopack.data.BackupJson
 import dev.abhay.monopack.export.ExportKind
 import dev.abhay.monopack.export.ExportState
 import dev.abhay.monopack.export.PackToInstall
@@ -36,12 +33,9 @@ import dev.abhay.monopack.model.IconStyle
 import dev.abhay.monopack.render.IconShape
 import dev.abhay.monopack.render.LocalIconShape
 import dev.abhay.monopack.settings.SettingsScreen
-import java.time.LocalDate
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /** Top-level destinations. */
 private enum class Screen { LIBRARY, CREATE, SETTINGS }
@@ -74,42 +68,14 @@ fun AppRoot(
         canInstall = installer.canInstall()
         if (canInstall && !state.installStepDone && !state.loading) library.finishInstallStep()
     }
-    // Backup and restore (Settings): a JSON file the user picks.
-    val scope = rememberCoroutineScope()
-    val backup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        val data = create.backup(state.iconShape.name)
-        scope.launch {
-            val saved = runCatching {
-                withContext(Dispatchers.IO) {
-                    context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(BackupJson.encode(data, System.currentTimeMillis()).toByteArray()) }
-                        ?: error("Couldn't write the file")
-                }
-            }
-            val count = data.edits.size
-            Toast.makeText(
-                context,
-                if (saved.isSuccess) "Backed up $count icon ${if (count == 1) "edit" else "edits"}" else "Couldn't save the backup",
-                Toast.LENGTH_SHORT,
-            ).show()
-        }
-    }
-    val restore = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        scope.launch {
-            val restored = runCatching {
-                withContext(Dispatchers.IO) { context.contentResolver.openInputStream(uri)?.use { it.readBytes().decodeToString() } }
-            }.getOrNull()?.let(BackupJson::decode)
-            if (restored == null) {
-                Toast.makeText(context, "That isn't a Monopack backup", Toast.LENGTH_SHORT).show()
-                return@launch
-            }
-            create.restoreBackup(restored)
-            restored.iconShape?.let { library.setIconShape(IconShape.fromName(it)) }
-            val count = restored.edits.size
-            Toast.makeText(context, "Restored $count icon ${if (count == 1) "edit" else "edits"}", Toast.LENGTH_SHORT).show()
-        }
-    }
+    val backups = rememberBackupFlow(
+        files = context.appContainer.backupFiles,
+        current = { create.backup(state.iconShape.name) },
+        onRestored = { backup ->
+            create.restoreBackup(backup)
+            backup.iconShape?.let { library.setIconShape(IconShape.fromName(it)) }
+        },
+    )
     val applyTheme = rememberApplyThemeFlow(state.folderLabel, state.applyHintDismissed, library::dismissApplyHint)
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { library.refresh() }
     // Back on the home screen from Create or Settings (not on launch: init and resume cover that).
@@ -172,8 +138,8 @@ fun AppRoot(
                     onOpenFolder = library::openFolder,
                     canInstall = canInstall,
                     onAllowInstalls = { runCatching { context.startActivity(installer.permissionIntent()) } },
-                    onBackup = { backup.launch("Monopack-backup-${LocalDate.now()}.json") },
-                    onRestore = { restore.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) },
+                    onBackup = backups.backUp,
+                    onRestore = backups.restore,
                     onResetApplyHint = library::resetApplyHint,
                     newAppAlerts = state.newAppAlerts,
                     onNewAppAlerts = library::setNewAppAlerts,

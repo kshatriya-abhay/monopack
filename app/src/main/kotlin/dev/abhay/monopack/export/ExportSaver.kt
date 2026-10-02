@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.Environment
 import android.provider.MediaStore
 import androidx.core.net.toUri
+import dev.abhay.monopack.R
 import java.io.File
 
 /** Where a saved export ended up. */
@@ -78,13 +79,13 @@ class DownloadsSaver(private val context: Context) : ExportSaver {
 
         fun mimeTypeFor(fileName: String): String = if (fileName.endsWith(".apk")) APK_MIME_TYPE else MIME_TYPE
 
-        fun shareIntent(uri: String, fileName: String = ""): Intent = Intent.createChooser(
+        fun shareIntent(context: Context, uri: String, fileName: String = ""): Intent = Intent.createChooser(
             Intent(Intent.ACTION_SEND).apply {
                 type = mimeTypeFor(fileName)
                 putExtra(Intent.EXTRA_STREAM, uri.toUri())
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             },
-            if (fileName.endsWith(".apk")) "Share icon pack" else "Share theme",
+            context.getString(if (fileName.endsWith(".apk")) R.string.share_pack else R.string.share_theme),
         )
     }
 }

@@ -7,6 +7,7 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -24,7 +25,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
@@ -40,27 +40,30 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import dev.abhay.monopack.R
 import dev.abhay.monopack.newapps.WatchablePack
 import dev.abhay.monopack.ui.TooltipIconButton
 
 /** One open-source project Monopack builds on (mirrors the README's Credits). */
-data class Credit(val name: String, val license: String, val usedFor: String, val url: String)
+data class Credit(val name: String, val license: String, @StringRes val usedFor: Int, val url: String)
 
 val CREDITS = listOf(
-    Credit("AOSP Launcher3 iconloaderlib", "Apache-2.0", "Generated themed icons and their colours", "https://android.googlesource.com/platform/frameworks/libs/systemui/+/refs/heads/main/iconloaderlib/"),
-    Credit("AOSP ThemePicker", "Apache-2.0", "Preset basic colours", "https://android.googlesource.com/platform/packages/apps/ThemePicker/"),
-    Credit("AOSP frameworks/base", "Apache-2.0", "Spotting missing wallpaper colours", "https://android.googlesource.com/platform/frameworks/base/"),
-    Credit("MaterialKolor", "MIT", "Material You palettes from a colour", "https://github.com/jordond/MaterialKolor"),
-    Credit("ARSCLib", "Apache-2.0", "Building icon packs on the device", "https://github.com/REAndroid/ARSCLib"),
-    Credit("apksig", "Apache-2.0", "Signing icon packs", "https://android.googlesource.com/platform/tools/apksig/"),
-    Credit("Alembicons", "GPL-3.0", "The on-device icon pack approach, launcher discovery", "https://codeberg.org/kaanelloed/Alembicons"),
-    Credit("CandyBar", "Apache-2.0", "Icon pack formats", "https://github.com/zixpo/candybar"),
-    Credit("HyperIcons", "MIT", "HyperOS theme structure and applying themes", "https://github.com/stbenjam/HyperIcons"),
-    Credit("HyperMonetIconTheme", "Apache-2.0", "Layered HyperOS icons and their shape", "https://github.com/VincentAzz/HyperMonetIconTheme"),
+    Credit("AOSP Launcher3 iconloaderlib", "Apache-2.0", R.string.credit_iconloaderlib, "https://android.googlesource.com/platform/frameworks/libs/systemui/+/refs/heads/main/iconloaderlib/"),
+    Credit("AOSP ThemePicker", "Apache-2.0", R.string.credit_themepicker, "https://android.googlesource.com/platform/packages/apps/ThemePicker/"),
+    Credit("AOSP frameworks/base", "Apache-2.0", R.string.credit_frameworks, "https://android.googlesource.com/platform/frameworks/base/"),
+    Credit("MaterialKolor", "MIT", R.string.credit_materialkolor, "https://github.com/jordond/MaterialKolor"),
+    Credit("ARSCLib", "Apache-2.0", R.string.credit_arsclib, "https://github.com/REAndroid/ARSCLib"),
+    Credit("apksig", "Apache-2.0", R.string.credit_apksig, "https://android.googlesource.com/platform/tools/apksig/"),
+    Credit("Alembicons", "GPL-3.0", R.string.credit_alembicons, "https://codeberg.org/kaanelloed/Alembicons"),
+    Credit("CandyBar", "Apache-2.0", R.string.credit_candybar, "https://github.com/zixpo/candybar"),
+    Credit("HyperIcons", "MIT", R.string.credit_hypericons, "https://github.com/stbenjam/HyperIcons"),
+    Credit("HyperMonetIconTheme", "Apache-2.0", R.string.credit_hypermonet, "https://github.com/VincentAzz/HyperMonetIconTheme"),
 )
 
 /**
@@ -90,6 +93,7 @@ fun SettingsScreen(
     onWatchPack: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     var showingCredits by remember { mutableStateOf(false) }
     var choosingPack by remember { mutableStateOf(false) }
     // Turning notifications on waits for a pack to be picked first (when there's a choice).
@@ -103,7 +107,7 @@ fun SettingsScreen(
         if (granted) {
             onNewAppAlerts(true)
         } else {
-            Toast.makeText(context, "Allow notifications for Monopack to use this", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, resources.getString(R.string.settings_allow_notifications), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -114,41 +118,41 @@ fun SettingsScreen(
 
     fun open(intent: Intent) {
         runCatching { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-            .onFailure { Toast.makeText(context, "Couldn't open that", Toast.LENGTH_SHORT).show() }
+            .onFailure { Toast.makeText(context, resources.getString(R.string.error_cant_open), Toast.LENGTH_SHORT).show() }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings") },
-                navigationIcon = { TooltipIconButton(Icons.AutoMirrored.Filled.ArrowBack, "Back", onBack) },
+                title = { Text(stringResource(R.string.settings_title)) },
+                navigationIcon = { TooltipIconButton(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.action_back), onBack) },
             )
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState())) {
-            Section("Storage")
-            Item("Open folder", "See your icon packs in a file manager") {
-                if (!onOpenFolder()) Toast.makeText(context, "No file manager found", Toast.LENGTH_SHORT).show()
+            Section(stringResource(R.string.settings_section_storage))
+            Item(stringResource(R.string.settings_open_folder), stringResource(R.string.settings_open_folder_summary)) {
+                if (!onOpenFolder()) Toast.makeText(context, resources.getString(R.string.error_no_file_manager), Toast.LENGTH_SHORT).show()
             }
-            Item("Change folder", "Where Monopack saves your icon packs") { onChangeFolder() }
+            Item(stringResource(R.string.settings_change_folder), stringResource(R.string.settings_change_folder_summary)) { onChangeFolder() }
             Item(
-                "Install icon packs",
-                if (canInstall) "Allowed. Packs install in one tap." else "Not allowed. Tap to allow Monopack to install packs.",
+                stringResource(R.string.settings_install),
+                if (canInstall) stringResource(R.string.settings_install_allowed) else stringResource(R.string.settings_install_not_allowed),
             ) { onAllowInstalls() }
 
-            Section("Backup")
-            Item("Back up edits", "Save your icon edits, colours and icon shape to a file") { onBackup() }
-            Item("Restore edits", "Add the icon edits from a backup file; yours for other apps stay") { onRestore() }
+            Section(stringResource(R.string.settings_section_backup))
+            Item(stringResource(R.string.settings_backup), stringResource(R.string.settings_backup_summary)) { onBackup() }
+            Item(stringResource(R.string.settings_restore), stringResource(R.string.settings_restore_summary)) { onRestore() }
 
-            Section("New apps")
+            Section(stringResource(R.string.settings_section_new_apps))
             SwitchItem(
-                "Notify me",
-                "When I install an app the watched pack doesn't cover. Monopack's home screen shows them too.",
+                stringResource(R.string.settings_notify),
+                stringResource(R.string.settings_notify_summary),
                 checked = newAppAlerts,
             ) { on ->
                 when {
                     !on -> onNewAppAlerts(false)
-                    packs.isEmpty() -> Toast.makeText(context, "Install a Monopack icon pack first", Toast.LENGTH_SHORT).show()
+                    packs.isEmpty() -> Toast.makeText(context, resources.getString(R.string.settings_install_pack_first), Toast.LENGTH_SHORT).show()
                     watchedPack == null -> {
                         enableAfterPick = true
                         choosingPack = true
@@ -157,33 +161,33 @@ fun SettingsScreen(
                 }
             }
             Item(
-                "Icon pack to watch",
+                stringResource(R.string.settings_watch),
                 when {
-                    packs.isEmpty() -> "Install a Monopack icon pack first"
-                    watchedPack == null -> "Choose the pack your launcher uses"
+                    packs.isEmpty() -> stringResource(R.string.settings_install_pack_first)
+                    watchedPack == null -> stringResource(R.string.settings_watch_choose)
                     else -> watchedPack.label
                 },
                 enabled = newAppAlerts && packs.isNotEmpty(),
             ) { choosingPack = true }
 
-            Section("Notifications")
-            Item("Notification settings", "Export progress and new apps") {
+            Section(stringResource(R.string.settings_section_notifications))
+            Item(stringResource(R.string.settings_notification_settings), stringResource(R.string.settings_notification_settings_summary)) {
                 open(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
             }
 
-            Section("HyperOS themes")
+            Section(stringResource(R.string.settings_section_hyperos))
             Item(
-                "Show the pick-the-file help again",
-                if (applyHintDismissed) "The help before applying a theme is turned off" else "The help shows before applying a theme",
+                stringResource(R.string.settings_apply_help),
+                if (applyHintDismissed) stringResource(R.string.settings_apply_help_off) else stringResource(R.string.settings_apply_help_on),
                 enabled = applyHintDismissed,
             ) {
                 onResetApplyHint()
-                Toast.makeText(context, "The help will show next time", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, resources.getString(R.string.settings_apply_help_reset), Toast.LENGTH_SHORT).show()
             }
 
-            Section("About")
-            Item("Monopack", "Version $version · GPL-3.0") {}
-            Item("Open-source credits", "Projects Monopack builds on") { showingCredits = true }
+            Section(stringResource(R.string.settings_section_about))
+            Item(stringResource(R.string.app_name), stringResource(R.string.settings_version, version)) {}
+            Item(stringResource(R.string.settings_credits), stringResource(R.string.settings_credits_summary)) { showingCredits = true }
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -194,11 +198,11 @@ fun SettingsScreen(
                 choosingPack = false
                 enableAfterPick = false
             },
-            title = { Text("Icon pack to watch") },
+            title = { Text(stringResource(R.string.settings_watch)) },
             text = {
                 Column {
                     Text(
-                        "Apps can't tell which icon pack your launcher uses. Pick it, so Monopack can tell you about new apps it doesn't cover.",
+                        stringResource(R.string.settings_watch_explain),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -227,14 +231,14 @@ fun SettingsScreen(
                 TextButton(onClick = {
                     choosingPack = false
                     enableAfterPick = false
-                }) { Text("Cancel") }
+                }) { Text(stringResource(R.string.action_cancel)) }
             },
         )
     }
     if (showingCredits) {
         AlertDialog(
             onDismissRequest = { showingCredits = false },
-            title = { Text("Open-source credits") },
+            title = { Text(stringResource(R.string.settings_credits)) },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     CREDITS.forEach { credit ->
@@ -245,12 +249,12 @@ fun SettingsScreen(
                                 .padding(vertical = 8.dp),
                         ) {
                             Text("${credit.name} · ${credit.license}", style = MaterialTheme.typography.titleSmall)
-                            Text(credit.usedFor, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(credit.usedFor), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { showingCredits = false }) { Text("Close") } },
+            confirmButton = { TextButton(onClick = { showingCredits = false }) { Text(stringResource(R.string.action_close)) } },
         )
     }
 }

@@ -116,8 +116,9 @@ class NewAppCheck(private val context: Context, private val store: NewAppStore, 
     private fun post(apps: List<InstalledApp>, pack: CoveringPack) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         ensureChannel(context)
-        val title = if (apps.size == 1) "${apps[0].label} has no themed icon" else "${apps.size} new apps have no themed icon"
-        val text = "${NewApps.names(apps)} ${if (apps.size == 1) "isn't" else "aren't"} in ${pack.label}. Tap to update the pack."
+        val res = context.resources
+        val title = if (apps.size == 1) res.getString(R.string.new_apps_title_one, apps[0].label) else res.getQuantityString(R.plurals.new_apps_title, apps.size, apps.size)
+        val text = res.getQuantityString(R.plurals.new_apps_notification_text, apps.size, NewApps.names(apps, res), pack.label)
         val open = Intent(context, MainActivity::class.java)
             .putExtra(MainActivity.EXTRA_UPDATE_PACK, pack.packageName)
             .putExtra(MainActivity.EXTRA_UPDATE_PACK_LABEL, pack.label)
@@ -143,8 +144,8 @@ class NewAppCheck(private val context: Context, private val store: NewAppStore, 
             val manager = context.getSystemService(NotificationManager::class.java)
             if (manager.getNotificationChannel(CHANNEL) == null) {
                 manager.createNotificationChannel(
-                    NotificationChannel(CHANNEL, "New apps", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                        description = "Apps you install that your icon pack doesn't cover yet"
+                    NotificationChannel(CHANNEL, context.getString(R.string.channel_new_apps), NotificationManager.IMPORTANCE_DEFAULT).apply {
+                        description = context.getString(R.string.channel_new_apps_description)
                     },
                 )
             }
