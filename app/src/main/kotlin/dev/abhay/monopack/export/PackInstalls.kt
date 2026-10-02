@@ -14,13 +14,18 @@ fun interface PackInstalls {
 }
 
 class AndroidPackInstalls(private val context: Context, private val signer: PackSigner) : PackInstalls {
+    /** Monopack's signing certificate, read from the Android Keystore once (it's slow). */
+    private val ourCertificate: ByteArray? by lazy {
+        runCatching { signer.certificate().encoded }.onFailure { Log.w("Monopack", "No signing key", it) }.getOrNull()
+    }
+
     override fun status(packageName: String): InstalledPack {
         val info = try {
             context.packageManager.getPackageInfo(packageName, PackageManager.GET_SIGNING_CERTIFICATES)
         } catch (_: PackageManager.NameNotFoundException) {
             return InstalledPack.NOT_INSTALLED
         }
-        val ours = runCatching { signer.certificate().encoded }.onFailure { Log.w("Monopack", "No signing key", it) }.getOrNull()
+        val ours = ourCertificate
         val theirs = info.signingInfo?.apkContentsSigners?.map { it.toByteArray() }.orEmpty()
         return if (ours != null && theirs.any { it.contentEquals(ours) }) InstalledPack.SAME_SIGNER else InstalledPack.OTHER_SIGNER
     }

@@ -38,6 +38,8 @@ import dev.abhay.monopack.render.LocalIconShape
 import dev.abhay.monopack.settings.SettingsScreen
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -110,7 +112,14 @@ fun AppRoot(
     }
     val applyTheme = rememberApplyThemeFlow(state.folderLabel, state.applyHintDismissed, library::dismissApplyHint)
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { library.refresh() }
-    LaunchedEffect(screen) { if (screen == Screen.LIBRARY) library.refresh() }
+    // Back on the home screen from Create or Settings (not on launch: init and resume cover that).
+    var previousScreen by remember { mutableStateOf(screen) }
+    LaunchedEffect(screen) {
+        if (screen == Screen.LIBRARY && previousScreen != Screen.LIBRARY) library.refresh()
+        previousScreen = screen
+    }
+    // The home screen comes first; Create's apps and icons load once it's showing.
+    LaunchedEffect(state.loading) { if (!state.loading) create.preload() }
 
     /** Opens Edit icon pack for an installed pack (by package), or + Create if it isn't in the library. */
     fun editInstalledPack(packageName: String, label: String?) {
@@ -130,10 +139,14 @@ fun AppRoot(
     }
 
     // Update in Edit icon pack installs the rebuilt pack as soon as it's saved.
-    val createState by create.state.collectAsStateWithLifecycle()
-    LaunchedEffect(createState.export, createState.installWhenDone) {
-        val done = createState.export as? ExportState.Done ?: return@LaunchedEffect
-        if (!createState.installWhenDone) return@LaunchedEffect
+    // Only these two fields: watching all of Create's state redrew the whole app while icons loaded.
+    val updateResult by remember(create) {
+        create.state.map { it.export to it.installWhenDone }.distinctUntilChanged()
+    }.collectAsStateWithLifecycle(initialValue = ExportState.Idle to false)
+    LaunchedEffect(updateResult) {
+        val (export, installWhenDone) = updateResult
+        val done = export as? ExportState.Done ?: return@LaunchedEffect
+        if (!installWhenDone) return@LaunchedEffect
         val file = done.files.singleOrNull { it.kind == ExportKind.ICON_PACK }
         create.dismissExport()
         if (file != null) installPack(PackToInstall(file.uri, file.title, PackNaming.packageFor(file.title)))

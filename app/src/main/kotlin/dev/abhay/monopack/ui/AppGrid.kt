@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -194,7 +195,11 @@ private fun GridIcon(item: DrawerItem, colors: IconColors?, contrast: Int, selec
                     colors = colors,
                     modifier = Modifier.fillMaxSize().scale(scale),
                 )
-                if (selected) SelectedMark(Modifier.align(Alignment.BottomEnd))
+                if (selected) {
+                    SelectedMark(Modifier.align(Alignment.BottomEnd))
+                } else if (item.app.user != null) {
+                    WorkBadge(Modifier.align(Alignment.BottomEnd))
+                }
             }
             original != null -> Image(
                 bitmap = original,
@@ -208,6 +213,22 @@ private fun GridIcon(item: DrawerItem, colors: IconColors?, contrast: Int, selec
                     .background(MaterialTheme.colorScheme.surfaceVariant),
             )
         }
+    }
+}
+
+/** The work-profile badge (a briefcase), as launchers show it on work apps. */
+@Composable
+private fun WorkBadge(modifier: Modifier) {
+    Box(
+        modifier
+            .size(20.dp)
+            .background(MaterialTheme.colorScheme.surface, CircleShape)
+            .padding(2.dp)
+            .background(MaterialTheme.colorScheme.tertiary, CircleShape)
+            .semantics { contentDescription = "Work profile" },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(Symbols.Work, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiary, modifier = Modifier.size(11.dp))
     }
 }
 

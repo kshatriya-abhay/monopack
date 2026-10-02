@@ -14,9 +14,11 @@ import dev.abhay.monopack.newapps.NewAppStore
 import dev.abhay.monopack.newapps.WatchablePack
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -48,7 +50,7 @@ class LibraryViewModelTest {
 
     private var installed = InstalledPack.SAME_SIGNER
 
-    private fun viewModel() = LibraryViewModel(store, folder, selections, { installed })
+    private fun viewModel() = LibraryViewModel(store, folder, selections, { installed }, io = dispatcher)
 
     @Before
     fun setUp() = Dispatchers.setMain(dispatcher)
@@ -143,6 +145,29 @@ class LibraryViewModelTest {
     }
 
     @Test
+    fun `a refresh cancelled by a newer one never shows onboarding`() = runTest(dispatcher) {
+        folder.granted += tree
+        folder.add("a.mtz")
+        // The first read of the folder setting is slow, so the second refresh cancels it mid-read.
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        var reads = 0
+        val slowStore = object : LibraryStore by store {
+            override suspend fun loadTree(): String? {
+                if (reads++ == 0) gate.await()
+                return tree
+            }
+        }
+        val vm = LibraryViewModel(slowStore, folder, selections, { installed }, io = dispatcher)
+        val seen = mutableListOf<LibraryState>()
+        backgroundScope.launch(dispatcher) { vm.state.collect { seen += it } }
+        runCurrent()
+        vm.refresh()
+        advanceUntilIdle()
+        assertThat(seen.none { !it.loading && it.needsFolder }).isTrue()
+        assertThat(vm.state.value.items.map { it.fileName }).containsExactly("a.mtz")
+    }
+
+    @Test
     fun `don't show again is remembered`() = runTest(dispatcher) {
         val vm = viewModel()
         advanceUntilIdle()
@@ -165,7 +190,7 @@ class LibraryViewModelTest {
             override suspend fun saveNotified(components: Set<String>) = Unit
         }
         val scheduled = mutableListOf<Boolean>()
-        val vm = LibraryViewModel(store, folder, selections, { installed }, newApps = newApps, scheduleNewApps = { scheduled += it })
+        val vm = LibraryViewModel(store, folder, selections, { installed }, newApps = newApps, scheduleNewApps = { scheduled += it }, io = dispatcher)
         advanceUntilIdle()
         assertThat(vm.state.value.newAppAlerts).isFalse()
         vm.setNewAppAlerts(true)
@@ -179,8 +204,10 @@ class LibraryViewModelTest {
 
     @Test
     fun `new apps show on open until dismissed, and return when others are installed`() = runTest(dispatcher) {
+        store.tree = tree
+        folder.granted += tree
         var found = NewAppsFound("My pack", listOf(InstalledApp("s/s.Main", "Swiggy", 2)))
-        val vm = LibraryViewModel(store, folder, selections, { installed }, findNewApps = { found })
+        val vm = LibraryViewModel(store, folder, selections, { installed }, findNewApps = { found }, io = dispatcher)
         advanceUntilIdle()
         assertThat(vm.state.value.newApps).isEqualTo(found)
         vm.dismissNewApps()

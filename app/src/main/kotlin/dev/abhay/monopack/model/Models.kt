@@ -2,6 +2,7 @@ package dev.abhay.monopack.model
 
 import android.content.ComponentName
 import android.content.pm.ApplicationInfo
+import android.os.UserHandle
 
 /** One launcher entry (an app can expose several). */
 data class LauncherApp(
@@ -13,6 +14,8 @@ data class LauncherApp(
     /** True for the activity HyperOS would use as the package-level icon. */
     val isMainActivity: Boolean,
     val lastUpdateTime: Long,
+    /** The profile it's in when that's not Monopack's own (a work profile); null for the main profile. */
+    val user: UserHandle? = null,
 ) {
     val packageName: String get() = component.packageName
     val key: String get() = component.flattenToShortString()

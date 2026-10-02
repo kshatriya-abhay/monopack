@@ -40,6 +40,14 @@ object Symbols {
         )
     }
 
+    /** Material "work": the work-profile badge. */
+    val Work: ImageVector by lazy {
+        symbol(
+            "Work",
+            "M20,6h-4V4c0,-1.11 -0.89,-2 -2,-2h-4c-1.11,0 -2,0.89 -2,2v2H4c-1.11,0 -1.99,0.89 -1.99,2L2,19c0,1.11 0.89,2 2,2h16c1.11,0 2,-0.89 2,-2V8c0,-1.11 -0.89,-2 -2,-2zM14,6h-4V4h4v2z",
+        )
+    }
+
     private fun symbol(name: String, path: String): ImageVector =
         ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f)
             .addPath(PathParser().parsePathString(path).toNodes(), fill = SolidColor(Color.Black))

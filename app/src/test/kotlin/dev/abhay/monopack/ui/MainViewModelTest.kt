@@ -174,7 +174,7 @@ class MainViewModelTest {
         fileExists = { it in existingFiles },
         loadDispatcher = dispatcher,
         workDispatcher = dispatcher,
-    )
+    ).also { it.preload() }
 
     @Before
     fun setUp() = Dispatchers.setMain(dispatcher)
@@ -738,7 +738,7 @@ class MainViewModelTest {
             runner = ExportRunner(CoroutineScope(dispatcher), exporter, slow, saver, store, library) {},
             saver = saver, systemStyle = IconStyle.DARK,
             iconPx = 160, loadDispatcher = dispatcher, workDispatcher = dispatcher,
-        )
+        ).also { it.preload() }
         advanceUntilIdle()
         vm.preview()
         vm.export(ExportOptions("x", emptySet(), target = ExportTarget.ICON_PACK))

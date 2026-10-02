@@ -20,11 +20,17 @@ import dev.abhay.monopack.newapps.NewAppJob
 import dev.abhay.monopack.newapps.NewAppStore
 import dev.abhay.monopack.newapps.WatchablePack
 import dev.abhay.monopack.render.IconShape
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** What the export sheet should warn about for an icon-pack name. */
 sealed interface PackNameWarning {
@@ -99,6 +105,8 @@ class LibraryViewModel(
     private val findNewApps: suspend () -> NewAppsFound? = { null },
     /** Installed Monopack packs. */
     private val listPacks: suspend () -> List<WatchablePack> = { emptyList() },
+    /** For folder, package and keystore lookups (tests pass their own). */
+    private val io: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
     /** New-app banners dismissed this session (by component), until other new apps turn up. */
     private var dismissedNewApps = emptySet<String>()
@@ -112,21 +120,30 @@ class LibraryViewModel(
         runner?.let { r -> viewModelScope.launch { r.state.collect { if (it is ExportState.Done) refresh() } } }
     }
 
-    /** Re-reads the folder and the records (on open, on resume and after changes). */
+    private var refreshJob: Job? = null
+
+    /**
+     * Re-reads the folder and the records (on open, on resume and after changes). A new call
+     * replaces one still running. The list shows as soon as the folder is read; install states,
+     * the installed packs and the new-app check follow, off the main thread.
+     */
     fun refresh() {
-        viewModelScope.launch {
+        refreshJob?.cancel()
+        refreshJob = viewModelScope.launch {
             val tree = runCatching { store.loadTree() }.getOrNull()
-            val access = tree != null && folder.hasAccess(tree)
+            val access = tree != null && withContext(io) { folder.hasAccess(tree) }
             val lastTheme = runCatching { selections.loadLastTheme() }.getOrNull()
             val hintDismissed = runCatching { store.loadApplyHintDismissed() }.getOrDefault(false)
             val shape = IconShape.fromName(runCatching { store.loadIconShape() }.getOrNull())
             val alerts = runCatching { newApps?.loadEnabled() }.getOrNull() ?: false
-            val packs = runCatching { listPacks() }.getOrDefault(emptyList())
             val watched = runCatching { newApps?.loadWatchedPack() }.getOrNull()
             val installStep = runCatching { store.loadInstallStepDone() }.getOrDefault(true)
-            val found = runCatching { findNewApps() }.onFailure { Log.w(TAG, "New-app check failed", it) }.getOrNull()
-                ?.takeIf { f -> f.apps.isNotEmpty() && !dismissedNewApps.containsAll(f.apps.map { it.component }) }
-            _state.update { it.copy(applyHintDismissed = hintDismissed, iconShape = shape, newAppAlerts = alerts, newApps = found, packs = packs, watchedPack = watched, installStepDone = installStep) }
+            // A newer refresh cancels this one; runCatching above turns that into defaults (no
+            // folder), which mustn't be shown (it flashed onboarding).
+            ensureActive()
+            _state.update {
+                it.copy(applyHintDismissed = hintDismissed, iconShape = shape, newAppAlerts = alerts, watchedPack = watched, installStepDone = installStep)
+            }
             if (tree == null || !access) {
                 _state.update { it.copy(loading = false, tree = tree, hasAccess = false, lastTheme = lastTheme, items = emptyList()) }
                 return@launch
@@ -134,37 +151,52 @@ class LibraryViewModel(
             val records = runCatching { store.loadRecords() }.getOrDefault(emptyMap())
             val files = runCatching { folder.list(tree) }
             val items = Library.merge(records.values, files.getOrDefault(emptyList()))
-            val installed = items.mapNotNull { item ->
-                item.packageName?.takeIf { item.kind == ExportKind.ICON_PACK }?.let { pkg ->
-                    item.fileName to runCatching { packInstalls.status(pkg) }.getOrDefault(InstalledPack.NOT_INSTALLED)
-                }
-            }.toMap()
+            val label = runCatching { folder.label(tree) }.getOrDefault("")
+            ensureActive()
             _state.update { s ->
                 s.copy(
                     loading = false,
                     tree = tree,
                     hasAccess = true,
-                    folderLabel = runCatching { folder.label(tree) }.getOrDefault(""),
+                    folderLabel = label,
                     items = items,
-                    installed = installed,
                     selected = s.selected.intersect(items.map { it.fileName }.toSet()),
                     lastTheme = lastTheme,
-                    error = files.exceptionOrNull()?.let { "Can't read ${folder.label(tree)}" },
+                    error = files.exceptionOrNull()?.let { "Can't read $label" },
                 )
             }
+            refreshExtras(items)
         }
+    }
+
+    /** Install states, the installed Monopack packs and the new-app check: slower, so after the list. */
+    private suspend fun refreshExtras(items: List<LibraryItem>) {
+        val installed = withContext(io) {
+            items.mapNotNull { item ->
+                item.packageName?.takeIf { item.kind == ExportKind.ICON_PACK }?.let { pkg ->
+                    item.fileName to runCatching { packInstalls.status(pkg) }.getOrDefault(InstalledPack.NOT_INSTALLED)
+                }
+            }.toMap()
+        }
+        val packs = runCatching { listPacks() }.getOrDefault(emptyList())
+        currentCoroutineContext().ensureActive()
+        _state.update { it.copy(installed = installed, packs = packs) }
+        val found = runCatching { findNewApps() }.onFailure { Log.w(TAG, "New-app check failed", it) }.getOrNull()
+            ?.takeIf { f -> f.apps.isNotEmpty() && !dismissedNewApps.containsAll(f.apps.map { it.component }) }
+        currentCoroutineContext().ensureActive()
+        _state.update { it.copy(newApps = found) }
     }
 
     /** The user picked (or created) the library folder. */
     fun onFolderPicked(treeUri: String) {
         viewModelScope.launch {
             val old = _state.value.tree
-            runCatching { folder.takeAccess(treeUri) }.onFailure {
+            runCatching { withContext(io) { folder.takeAccess(treeUri) } }.onFailure {
                 Log.w(TAG, "Couldn't keep access to the folder", it)
                 _state.update { s -> s.copy(error = "Couldn't keep access to that folder") }
                 return@launch
             }
-            if (old != null && old != treeUri) folder.releaseAccess(old)
+            if (old != null && old != treeUri) withContext(io) { folder.releaseAccess(old) }
             store.saveTree(treeUri)
             refresh()
         }

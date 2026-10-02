@@ -1,6 +1,7 @@
 package dev.abhay.monopack.apps
 
 import android.content.Context
+import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
 import android.graphics.drawable.AdaptiveIconDrawable
 import android.graphics.drawable.Drawable
@@ -31,6 +32,7 @@ data class LoadedIcon(val drawable: Drawable, val origin: IconOrigin) {
  */
 class IconSourceLoader(context: Context) {
     private val pm = context.packageManager
+    private val launcherApps = context.getSystemService(LauncherApps::class.java)
 
     fun load(app: LauncherApp): LoadedIcon {
         loadFromResources(app)?.let { return LoadedIcon(it, IconOrigin.RESOURCES) }
@@ -54,9 +56,18 @@ class IconSourceLoader(context: Context) {
             }.getOrNull()
     }
 
-    /** What the launcher sees; on HyperOS this is the themed icon when an icon theme is applied. */
-    fun loadViaPackageManager(app: LauncherApp): Drawable? =
-        runCatching { pm.getActivityIcon(app.component) }.getOrNull()
+    /**
+     * What the launcher sees; on HyperOS this is the themed icon when an icon theme is applied.
+     * Apps in another profile go through [LauncherApps] (unbadged).
+     */
+    fun loadViaPackageManager(app: LauncherApp): Drawable? = runCatching {
+        val user = app.user
+        if (user == null) {
+            pm.getActivityIcon(app.component)
+        } else {
+            launcherApps?.getActivityList(app.packageName, user)?.firstOrNull { it.componentName == app.component }?.getIcon(DENSITY)
+        }
+    }.getOrNull()
 
     private companion object {
         const val DENSITY = DisplayMetrics.DENSITY_XXXHIGH

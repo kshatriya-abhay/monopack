@@ -6,8 +6,10 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.LauncherApps
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
+import android.os.Process
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -50,7 +52,7 @@ class NewAppCheck(private val context: Context, private val store: NewAppStore, 
 
     private suspend fun findNow(): Found? {
         val pack = watchedPack() ?: return null
-        val apps = launcherApps()
+        val apps = uncoveredApps(pack.components)
         val notified = store.loadNotified()
         val fresh = NewApps.toNotify(apps, pack, notified)
         // Forget apps the pack covers now (re-exported) or that were uninstalled.
@@ -83,12 +85,17 @@ class NewAppCheck(private val context: Context, private val store: NewAppStore, 
     private fun label(pack: PackageInfo): String =
         pack.applicationInfo?.loadLabel(context.packageManager)?.toString() ?: pack.packageName
 
-    private fun launcherApps(): List<InstalledApp> {
+    /**
+     * Launcher apps in every profile (work-profile apps too) that [covered] doesn't include. Labels
+     * and install dates are read only for those: reading them for every app took seconds.
+     */
+    private fun uncoveredApps(covered: Set<String>): List<InstalledApp> {
         val pm = context.packageManager
         val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
         val installed = mutableMapOf<String, Long>()
-        return pm.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(0))
-            .filter { it.activityInfo.packageName != context.packageName }
+        fun isCandidate(pkg: String, cls: String) = pkg != context.packageName && "$pkg/$cls" !in covered
+        val main = pm.queryIntentActivities(intent, PackageManager.ResolveInfoFlags.of(0))
+            .filter { isCandidate(it.activityInfo.packageName, it.activityInfo.name) }
             .map { ri ->
                 val pkg = ri.activityInfo.packageName
                 InstalledApp(
@@ -97,6 +104,13 @@ class NewAppCheck(private val context: Context, private val store: NewAppStore, 
                     firstInstallTime = installed.getOrPut(pkg) { runCatching { pm.getPackageInfo(pkg, 0).firstInstallTime }.getOrDefault(0L) },
                 )
             }
+        val launcherApps = context.getSystemService(LauncherApps::class.java) ?: return main
+        val others = runCatching {
+            launcherApps.profiles.filter { it != Process.myUserHandle() }.flatMap { launcherApps.getActivityList(null, it) }
+        }.getOrDefault(emptyList())
+            .filter { isCandidate(it.componentName.packageName, it.componentName.className) }
+            .map { InstalledApp(it.componentName.packageName + "/" + it.componentName.className, it.label.toString().trim(), it.firstInstallTime) }
+        return (main + others).distinctBy { it.component }
     }
 
     private fun post(apps: List<InstalledApp>, pack: CoveringPack) {

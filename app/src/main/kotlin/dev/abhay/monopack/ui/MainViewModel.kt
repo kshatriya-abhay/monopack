@@ -236,7 +236,14 @@ class MainViewModel(
                 }
             }
         }
-        refresh()
+    }
+
+    /**
+     * Starts loading apps and icons if that hasn't started. Called once the home screen is showing,
+     * so it doesn't compete with it, and so + Create opens onto a ready grid.
+     */
+    fun preload() {
+        if (fetchJob == null) refresh()
     }
 
     /** Long-press: starts selection mode, or toggles the app if already selecting. */
