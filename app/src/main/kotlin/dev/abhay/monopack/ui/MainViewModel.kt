@@ -1,9 +1,11 @@
 package dev.abhay.monopack.ui
 
 import android.content.res.Configuration
+import android.graphics.Bitmap
 import android.os.SystemClock
 import android.util.Log
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.core.graphics.createBitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.viewModelScope
@@ -25,6 +27,7 @@ import dev.abhay.monopack.export.ExportedFile
 import dev.abhay.monopack.iconpack.PackNaming
 import dev.abhay.monopack.model.Accent
 import dev.abhay.monopack.model.ColorSource
+import dev.abhay.monopack.model.Glyph
 import dev.abhay.monopack.model.GlyphSource
 import dev.abhay.monopack.model.IconEdit
 import dev.abhay.monopack.model.IconPalette
@@ -571,7 +574,7 @@ class MainViewModel(
         var done = 0
         channelFlow {
             for (index in todo) {
-                launch(loadDispatcher) { send(index to loader.load(items[index].app, iconPx, glyphPx)) }
+                launch(loadDispatcher) { send(index to loadOne(items[index].app, glyphPx)) }
             }
         }.collect { (index, item) ->
             items[index] = item
@@ -583,6 +586,17 @@ class MainViewModel(
             }
         }
         Log.i(TAG, "Prepared ${todo.size} icons (${glyphPx}px glyphs) in ${SystemClock.uptimeMillis() - started} ms")
+    }
+
+    /**
+     * One app's item. Third-party icons can throw while loading or drawing; that app is shown as
+     * failed rather than failing every icon (and crashing the app).
+     */
+    private fun loadOne(app: LauncherApp, glyphPx: Int): DrawerItem = try {
+        loader.load(app, iconPx, glyphPx)
+    } catch (e: Exception) {
+        Log.w(TAG, "Couldn't load the icon of ${app.key}", e)
+        DrawerItem(app, glyph = Glyph(createBitmap(glyphPx, glyphPx, Bitmap.Config.ALPHA_8), GlyphSource.FAILED))
     }
 
     companion object {

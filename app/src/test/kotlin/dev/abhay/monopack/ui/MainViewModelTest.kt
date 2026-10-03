@@ -459,6 +459,28 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `one icon that throws doesn't fail the others`() = runTest(dispatcher) {
+        val throwing = object : ItemLoader {
+            override fun load(app: LauncherApp, iconPx: Int, glyphPx: Int): DrawerItem {
+                if (app.label == "Beta") throw IllegalStateException("Software rendering doesn't support hardware bitmaps")
+                return fakeLoader.load(app, iconPx, glyphPx)
+            }
+            override fun glyph(app: LauncherApp, sizePx: Int) = null
+        }
+        val store = FakeStore()
+        val vm = MainViewModel(
+            apps = fakeApps, loader = throwing, palettes = fakePalettes, store = store,
+            runner = ExportRunner(CoroutineScope(dispatcher), exporter, packExporter, saver, store, library) {},
+            saver = saver, systemStyle = IconStyle.DARK, iconPx = 160, loadDispatcher = dispatcher, workDispatcher = dispatcher,
+        ).also { it.preload() }
+        advanceUntilIdle()
+        val s = vm.state.value
+        assertThat(s.iconsReady).isTrue()
+        assertThat(s.items.single { it.app.label == "Beta" }.glyph!!.source).isEqualTo(GlyphSource.FAILED)
+        assertThat(s.items.filter { it.app.label != "Beta" }.all { it.glyph!!.source != GlyphSource.FAILED }).isTrue()
+    }
+
+    @Test
     fun `cancel clears the selection`() = runTest(dispatcher) {
         val vm = viewModel()
         advanceUntilIdle()

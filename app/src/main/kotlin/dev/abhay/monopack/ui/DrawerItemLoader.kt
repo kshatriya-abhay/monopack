@@ -45,7 +45,7 @@ class DrawerItemLoader(private val icons: IconSourceLoader) : ItemLoader {
     }
 
     override fun glyph(app: LauncherApp, sizePx: Int): ImageBitmap? =
-        GlyphExtractor.extract(icons.load(app).drawable, sizePx).mask.asImageBitmap()
+        runCatching { GlyphExtractor.extract(icons.load(app).drawable, sizePx).mask.asImageBitmap() }.getOrNull()
 }
 
 private fun Drawable.renderPlain(sizePx: Int): Bitmap {
