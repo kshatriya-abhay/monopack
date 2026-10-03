@@ -113,6 +113,8 @@ class LibraryViewModel(
     private val findNewApps: suspend () -> NewAppsFound? = { null },
     /** Installed Monopack packs. */
     private val listPacks: suspend () -> List<WatchablePack> = { emptyList() },
+    /** A pack file's real package and label (for files with no record); blocking. */
+    private val readPack: (FolderFile) -> PackArchive? = { null },
     /** For folder, package and keystore lookups (tests pass their own). */
     private val io: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
@@ -178,7 +180,20 @@ class LibraryViewModel(
     }
 
     /** Install states, the installed Monopack packs and the new-app check: slower, so after the list. */
-    private suspend fun refreshExtras(items: List<LibraryItem>) {
+    private suspend fun refreshExtras(listed: List<LibraryItem>) {
+        // Packs with no record: their title came from the file name; read the real one from the APK.
+        val items = withContext(io) {
+            listed.map { item ->
+                val file = item.file
+                if (item.kind != ExportKind.ICON_PACK || item.tracked || file == null) return@map item
+                val archive = catching { readPack(file) }.getOrNull() ?: return@map item
+                item.copy(title = archive.label, packageName = archive.packageName)
+            }
+        }
+        if (items != listed) {
+            currentCoroutineContext().ensureActive()
+            _state.update { it.copy(items = items) }
+        }
         val installed = withContext(io) {
             items.mapNotNull { item ->
                 item.packageName?.takeIf { item.kind == ExportKind.ICON_PACK }?.let { pkg ->
@@ -328,6 +343,7 @@ class LibraryViewModel(
                     scheduleNewApps = { NewAppJob.sync(app, it) },
                     findNewApps = { container.newAppCheck.find()?.let { NewAppsFound(it.pack.label, it.uncovered, it.pack.packageName) } },
                     listPacks = { container.newAppCheck.packs() },
+                    readPack = PackArchiveReader(app)::read,
                 )
             }
         }

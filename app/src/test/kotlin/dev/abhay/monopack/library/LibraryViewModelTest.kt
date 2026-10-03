@@ -168,6 +168,26 @@ class LibraryViewModelTest {
     }
 
     @Test
+    fun `packs without a record get their real name and package from the APK`() = runTest(dispatcher) {
+        store.tree = tree
+        folder.granted += tree
+        folder.add("MyPack.apk")
+        val real = PackNaming.packageFor("My Pack")
+        val checked = mutableListOf<String>()
+        val vm = LibraryViewModel(
+            store, folder, selections, { pkg -> checked += pkg; InstalledPack.SAME_SIGNER },
+            readPack = { file -> if (file.name == "MyPack.apk") PackArchive(real, "My Pack") else null },
+            io = dispatcher,
+        )
+        advanceUntilIdle()
+        val item = vm.state.value.items.single()
+        assertThat(item.title).isEqualTo("My Pack")
+        assertThat(item.packageName).isEqualTo(real)
+        assertThat(checked).contains(real)
+        assertThat(vm.state.value.installed["MyPack.apk"]).isEqualTo(InstalledPack.SAME_SIGNER)
+    }
+
+    @Test
     fun `don't show again is remembered`() = runTest(dispatcher) {
         val vm = viewModel()
         advanceUntilIdle()

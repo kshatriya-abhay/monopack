@@ -66,7 +66,6 @@ import dev.abhay.monopack.export.InstalledPack
 import dev.abhay.monopack.export.PackToInstall
 import dev.abhay.monopack.hyperos.ApplyTheme
 import dev.abhay.monopack.hyperos.ThemeToApply
-import dev.abhay.monopack.iconpack.PackNaming
 import dev.abhay.monopack.model.IconStyle
 import dev.abhay.monopack.newapps.NewApps
 import dev.abhay.monopack.render.LocalIconShape
@@ -122,7 +121,8 @@ fun LibraryScreen(
 
     fun install(item: LibraryItem) {
         val file = item.file ?: return
-        installPack(PackToInstall(file.documentUri, item.title, item.packageName ?: PackNaming.packageFor(item.title)))
+        // No recorded package: the installer accepts any pack signed by this Monopack.
+        installPack(PackToInstall(file.documentUri, item.title, item.packageName))
     }
 
     Scaffold(
