@@ -3,6 +3,7 @@ package dev.abhay.monopack.export
 import dev.abhay.monopack.hyperos.ExportApp
 import dev.abhay.monopack.iconpack.PackNaming
 import dev.abhay.monopack.hyperos.ExportRequest
+import dev.abhay.monopack.hyperos.IconsBundleWriter
 import dev.abhay.monopack.hyperos.MtzNaming
 import dev.abhay.monopack.model.IconEdit
 import dev.abhay.monopack.model.IconPalette
@@ -94,12 +95,17 @@ object ExportJobs {
                 title = title,
                 description = "Monochrome icons generated on-device by Monopack (${apps.size} apps).",
                 fileName = fileNameFor(title, now),
-                apps = apps.map { app ->
+                apps = apps.mapNotNull { app ->
+                    // HyperOS icon folders are named after the component; a name the theme writer
+                    // can't use safely (e.g. "Icon-Dark", combining marks) skips that app only.
+                    val folders = MtzNaming.folders(app.packageName, app.component.className, app.isMainActivity)
+                        .filter(IconsBundleWriter::isSafeName)
+                    if (folders.isEmpty()) return@mapNotNull null
                     ExportApp(
                         app = app,
                         palette = IconEdits.resolve(pairs, style, edits[app.key]) ?: pairs.getValue(style),
                         contrast = edits[app.key]?.contrast ?: 0,
-                        folders = MtzNaming.folders(app.packageName, app.component.className, app.isMainActivity),
+                        folders = folders,
                     )
                 },
                 darkPreview = style == IconStyle.DARK,
