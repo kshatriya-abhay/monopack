@@ -34,4 +34,11 @@ class BackupFilesTest {
         val file = File(dir, "notes.txt").apply { writeText("hello") }
         assertThat(files.read(Uri.fromFile(file).toString())).isNull()
     }
+
+    @Test
+    fun hugeFilesAreRefusedWithoutReadingThemWhole() = runTest(dispatcher) {
+        val file = File(dir, "theme.mtz")
+        java.io.RandomAccessFile(file, "rw").use { it.setLength(BackupFiles.MAX_BYTES + 1L) }
+        assertThat(files.read(Uri.fromFile(file).toString())).isNull()
+    }
 }
