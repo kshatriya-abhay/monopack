@@ -11,7 +11,6 @@ import dev.abhay.monopack.model.LauncherApp
 import dev.abhay.monopack.model.Selection
 import dev.abhay.monopack.palette.IconEdits
 import java.time.LocalDateTime
-import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 /**
@@ -37,6 +36,10 @@ object ExportJobs {
         previewStyle: IconStyle,
         now: LocalDateTime,
         selection: Selection? = null,
+        /** The current time (epoch ms): the version code comes from it, not from [now], which skips and repeats with DST. */
+        epochMillis: Long = System.currentTimeMillis(),
+        /** The installed pack's version code, if it's installed: the new one is always higher. */
+        installedVersion: Long? = null,
     ): ExportJob.Pack {
         val bothModes = styles.containsAll(IconStyle.entries)
         val style = if (bothModes) IconStyle.LIGHT else styles.singleOrNull() ?: previewStyle
@@ -45,7 +48,7 @@ object ExportJobs {
                 name = name,
                 // One file per pack: re-exporting replaces it.
                 fileName = packFileName(name),
-                versionCode = (now.atZone(ZoneId.systemDefault()).toEpochSecond() / 60).toInt(),
+                versionCode = versionCode(epochMillis, installedVersion),
                 versionName = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")),
                 apps = apps.map { app ->
                     val edit = edits[app.key]
@@ -62,6 +65,17 @@ object ExportJobs {
             ),
             selection,
         )
+    }
+
+    /**
+     * A pack's version code: minutes since the epoch (UTC, so DST doesn't make it go back), and
+     * always above the installed version, in case the clock was set back. Android refuses an
+     * update with a lower version code.
+     */
+    fun versionCode(epochMillis: Long, installedVersion: Long?): Int {
+        val fromClock = (epochMillis / 60_000).toInt()
+        val next = installedVersion?.plus(1)?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt() ?: 0
+        return maxOf(fromClock, next)
     }
 
     /** One HyperOS theme (`.mtz`) per style in [styles]; [preferredStyle]'s becomes the Reapply target. */

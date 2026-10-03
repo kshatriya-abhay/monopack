@@ -196,6 +196,8 @@ class MainViewModel(
     private val fileExists: (String) -> Boolean = { File(it).exists() },
     private val loadDispatcher: CoroutineDispatcher = Dispatchers.Default.limitedParallelism(4),
     private val workDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    /** An installed pack's version code (null when not installed), so updates always go up. */
+    private val installedVersion: (String) -> Long? = { null },
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(
@@ -399,7 +401,7 @@ class MainViewModel(
      * Exports the previewed icons in the background ([ExportRunner]): one `.mtz` per chosen style,
      * or one icon pack, every launcher entry with its icon edit applied, saved to Downloads.
      */
-    fun export(options: ExportOptions, now: LocalDateTime = LocalDateTime.now()) {
+    fun export(options: ExportOptions, now: LocalDateTime = LocalDateTime.now(), epochMillis: Long = System.currentTimeMillis()) {
         val s = _state.value
         if (!s.exportEnabled) return
         val committed = s.committed ?: return
@@ -422,7 +424,10 @@ class MainViewModel(
                 if (options.styles.isEmpty()) return
                 ExportJobs.themes(name, options.styles, apps, s.edits, pairs, preferredStyle = committed.style, now = now)
             }
-            ExportTarget.ICON_PACK -> ExportJobs.pack(name, options.styles, apps, s.edits, pairs, previewStyle = committed.style, now = now, selection = committed)
+            ExportTarget.ICON_PACK -> ExportJobs.pack(
+                name, options.styles, apps, s.edits, pairs, previewStyle = committed.style, now = now, selection = committed,
+                epochMillis = epochMillis, installedVersion = installedVersion(PackNaming.packageFor(name)),
+            )
         }
         runner.start(job)
     }
@@ -618,6 +623,7 @@ class MainViewModel(
                     systemStyle = if (night == Configuration.UI_MODE_NIGHT_YES) IconStyle.DARK else IconStyle.LIGHT,
                     iconPx = (GRID_ICON_DP * density).roundToInt(),
                     editorIconPx = (EDITOR_ICON_DP * density).roundToInt(),
+                    installedVersion = { pkg -> runCatching { app.packageManager.getPackageInfo(pkg, 0).longVersionCode }.getOrNull() },
                 )
             }
         }
