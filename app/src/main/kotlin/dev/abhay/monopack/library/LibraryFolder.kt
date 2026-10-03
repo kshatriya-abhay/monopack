@@ -15,7 +15,10 @@ import kotlinx.coroutines.withContext
  * storage permission is needed.
  */
 interface LibraryFolder {
-    /** Whether [treeUri] still has a persisted read/write grant. */
+    /**
+     * Whether [treeUri] can be used: it still has a persisted read/write grant, and the folder still
+     * exists (the grant outlives a folder deleted or renamed in a file manager).
+     */
     fun hasAccess(treeUri: String): Boolean
 
     /** Keeps the grant for a newly picked folder. */
@@ -42,7 +45,13 @@ class SafLibraryFolder(private val context: Context) : LibraryFolder {
     private val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
 
     override fun hasAccess(treeUri: String): Boolean =
-        resolver.persistedUriPermissions.any { it.uri.toString() == treeUri && it.isReadPermission && it.isWritePermission }
+        resolver.persistedUriPermissions.any { it.uri.toString() == treeUri && it.isReadPermission && it.isWritePermission } && exists(treeUri)
+
+    private fun exists(treeUri: String): Boolean = runCatching {
+        val tree = treeUri.toUri()
+        val folder = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+        resolver.query(folder, arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID), null, null, null)?.use { it.moveToFirst() } ?: false
+    }.getOrDefault(false)
 
     override fun takeAccess(treeUri: String) = resolver.takePersistableUriPermission(treeUri.toUri(), flags)
 

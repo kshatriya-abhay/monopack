@@ -3,6 +3,8 @@ package dev.abhay.monopack.library
 import com.google.common.truth.Truth.assertThat
 import dev.abhay.monopack.export.DownloadsSaver
 import dev.abhay.monopack.export.ExportKind
+import dev.abhay.monopack.export.ExportSaver
+import dev.abhay.monopack.export.SavedExport
 import java.io.File
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
@@ -38,5 +40,24 @@ class FolderSaverTest {
         assertThat(saved.name).isEqualTo("Monopack.apk")
         assertThat(folder.files.map { it.name }).containsExactly("Other-pack-20260927-1015.apk", "Monopack.apk")
         assertThat(store.records.keys).containsExactly("Monopack.apk", "Other-pack-20260927-1015.apk")
+    }
+
+    @Test
+    fun aFolderThatIsGoneFallsBackToDownloads() = runTest {
+        val fallback = object : ExportSaver {
+            var saved: File? = null
+            override suspend fun save(file: File, packageName: String?): SavedExport {
+                saved = file
+                return SavedExport("content://downloads/1", "Download/Monopack/${file.name}", "")
+            }
+            override suspend fun copyTo(file: File, uri: String) = Unit
+        }
+        // The folder was deleted in a file manager: the grant may remain, but it isn't usable.
+        folder.granted -= tree
+        val file = File("build/Monopack.apk")
+        val saved = FolderSaver(store, folder, fallback).save(file, packageName = "p.one")
+        assertThat(fallback.saved).isEqualTo(file)
+        assertThat(saved.displayPath).isEqualTo("Download/Monopack/Monopack.apk")
+        assertThat(folder.files).isEmpty()
     }
 }

@@ -5,6 +5,9 @@ import dev.abhay.monopack.export.DownloadsSaver
 import dev.abhay.monopack.export.ExportSaver
 import dev.abhay.monopack.export.SavedExport
 import java.io.File
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Saves exports into the library folder; without one (or without access to it), falls back to
@@ -13,10 +16,12 @@ import java.io.File
 class FolderSaver(
     private val store: LibraryStore,
     private val folder: LibraryFolder,
-    private val fallback: DownloadsSaver,
+    private val fallback: ExportSaver,
+    private val io: CoroutineDispatcher = Dispatchers.IO,
 ) : ExportSaver {
     override suspend fun save(file: File, packageName: String?): SavedExport {
-        val tree = store.loadTree()?.takeIf { folder.hasAccess(it) } ?: return fallback.save(file, packageName)
+        // Without a usable folder (no grant, or deleted in a file manager), save to Downloads instead.
+        val tree = store.loadTree()?.takeIf { withContext(io) { folder.hasAccess(it) } } ?: return fallback.save(file, packageName)
         val saved = folder.write(tree, file, file.name, DownloadsSaver.mimeTypeFor(file.name))
         if (packageName != null) removeOlderExports(tree, packageName, keep = saved.name)
         return SavedExport(
