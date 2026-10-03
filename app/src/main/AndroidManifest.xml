@@ -7,6 +7,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Installs and updates the icon packs Monopack builds (the user allows it once). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Lets those updates go through without a prompt (Android 12+; granted without asking). -->
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
     <!-- Keeps the optional new-app check scheduled after a reboot (a persisted job). -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
