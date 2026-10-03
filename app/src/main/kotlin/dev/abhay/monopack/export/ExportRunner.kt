@@ -111,27 +111,39 @@ class ExportRunner(
 
     private var job: Job? = null
 
+    /**
+     * Which export may publish state. A cancelled export can still be in blocking work that can't
+     * be cancelled (building, signing); when it ends it must not overwrite the next export's state.
+     */
+    @Volatile
+    private var generation = 0
+
     /** Starts [work] unless an export is already running. */
     fun start(work: ExportJob): Boolean {
         if (_state.value is ExportState.Running) return false
+        val gen = ++generation
         _state.value = when (work) {
             is ExportJob.Themes -> ExportState.Running(work.kind, 0, work.requests.first().second.apps.size, 1, work.requests.size)
             is ExportJob.Pack -> ExportState.Running(work.kind, 0, work.request.apps.size)
         }
         background.started()
+        val previous = job
         job = scope.launch {
+            // A cancelled export may still be finishing; both use the same cache files.
+            previous?.join()
             try {
                 themeExporter.clearCache()
-                _state.value = when (work) {
-                    is ExportJob.Themes -> runThemes(work)
-                    is ExportJob.Pack -> runPack(work)
+                val done = when (work) {
+                    is ExportJob.Themes -> runThemes(work, gen)
+                    is ExportJob.Pack -> runPack(work, gen)
                 }
+                publish(gen, done)
             } catch (e: CancellationException) {
-                _state.value = ExportState.Idle
+                publish(gen, ExportState.Idle)
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "Export failed", e)
-                _state.value = ExportState.Failed(work.kind, e.message ?: e.javaClass.simpleName)
+                publish(gen, ExportState.Failed(work.kind, e.message ?: e.javaClass.simpleName))
             }
         }
         return true
@@ -139,7 +151,13 @@ class ExportRunner(
 
     fun cancel() {
         job?.cancel()
+        generation++
         _state.value = ExportState.Idle
+    }
+
+    /** Publishes [state] if export [gen] is still the current one. */
+    private fun publish(gen: Int, state: ExportState) {
+        if (gen == generation) _state.value = state
     }
 
     /** Clears a finished or failed export (the result sheet was closed). */
@@ -147,10 +165,10 @@ class ExportRunner(
         if (_state.value !is ExportState.Running) _state.value = ExportState.Idle
     }
 
-    private suspend fun runThemes(work: ExportJob.Themes): ExportState.Done {
+    private suspend fun runThemes(work: ExportJob.Themes, gen: Int): ExportState.Done {
         val files = work.requests.mapIndexed { index, (style, request) ->
             val file = themeExporter.export(request) { done, total ->
-                _state.value = ExportState.Running(work.kind, done, total, index + 1, work.requests.size)
+                publish(gen, ExportState.Running(work.kind, done, total, index + 1, work.requests.size))
             }
             val saved = saver.save(file)
             val pair = work.pairs[style]
@@ -170,12 +188,12 @@ class ExportRunner(
         return ExportState.Done(files, lastTheme)
     }
 
-    private suspend fun runPack(work: ExportJob.Pack): ExportState.Done {
+    private suspend fun runPack(work: ExportJob.Pack, gen: Int): ExportState.Done {
         val request = work.request
         val file: File = packExporter.export(
             request,
-            onProgress = { done, total -> _state.value = ExportState.Running(work.kind, done, total) },
-            onSigning = { _state.update { (it as? ExportState.Running)?.copy(signing = true) ?: it } },
+            onProgress = { done, total -> publish(gen, ExportState.Running(work.kind, done, total)) },
+            onSigning = { if (gen == generation) _state.update { (it as? ExportState.Running)?.copy(signing = true) ?: it } },
         )
         val saved = saver.save(file, request.packageName)
         record(
