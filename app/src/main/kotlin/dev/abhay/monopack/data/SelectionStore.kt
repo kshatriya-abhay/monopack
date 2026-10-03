@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import dev.abhay.monopack.glyph.MaskContrast
 import dev.abhay.monopack.model.Accent
 import dev.abhay.monopack.model.ColorSource
 import dev.abhay.monopack.model.IconEdit
@@ -168,6 +169,9 @@ class DataStoreSelectionStore(context: Context) : SelectionStore {
  * pair; it's moved to whichever layer shows that colour.
  */
 internal object EditsJson {
+    /** Tones run 0–100, so no edit moves one further than this. */
+    private const val MAX_TONE_OFFSET = 100
+
     fun encode(edits: Map<String, IconEdit>): String = JSONObject().apply {
         edits.forEach { (key, edit) ->
             put(
@@ -197,10 +201,11 @@ internal object EditsJson {
                     key,
                     IconEdit(
                         base = base,
-                        glyphToneOffset = entry.optInt("glyph", if (legacyOnGlyph) legacy else 0),
-                        plateToneOffset = entry.optInt("plate", if (legacyOnGlyph) 0 else legacy),
+                        // Clamped: backups are files from outside the app.
+                        glyphToneOffset = entry.optInt("glyph", if (legacyOnGlyph) legacy else 0).coerceIn(-MAX_TONE_OFFSET, MAX_TONE_OFFSET),
+                        plateToneOffset = entry.optInt("plate", if (legacyOnGlyph) 0 else legacy).coerceIn(-MAX_TONE_OFFSET, MAX_TONE_OFFSET),
                         inverted = inverted,
-                        contrast = entry.optInt("contrast", 0),
+                        contrast = entry.optInt("contrast", 0).coerceIn(0, MaskContrast.MAX),
                         autoNight = entry.optBoolean("autoNight", true),
                     ),
                 )

@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -90,7 +91,9 @@ fun OnboardingScreen(lostAccess: Boolean, error: LibraryError?, onFolderPicked: 
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Spacer(Modifier.height(32.dp))
+                Spacer(Modifier.height(20.dp))
+                Disclaimer()
+                Spacer(Modifier.height(24.dp))
                 Button(onClick = { step = 1 }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.action_next)) }
             } else {
                 Text(
@@ -135,6 +138,18 @@ fun OnboardingScreen(lostAccess: Boolean, error: LibraryError?, onFolderPicked: 
                     TextButton(onClick = { step = 0 }, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(stringResource(R.string.action_back)) }
                 }
             }
+        }
+    }
+}
+
+/** Packs are for personal use; sharing them is up to the user. */
+@Composable
+private fun Disclaimer() {
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp)) {
+            Text(stringResource(R.string.onboarding_disclaimer_title), style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(4.dp))
+            Text(stringResource(R.string.onboarding_disclaimer), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

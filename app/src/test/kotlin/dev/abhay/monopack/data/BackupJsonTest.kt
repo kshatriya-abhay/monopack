@@ -37,6 +37,15 @@ class BackupJsonTest {
     }
 
     @Test
+    fun outOfRangeValuesAreClamped() {
+        val json = """{"app":"Monopack","version":1,"edits":{"a/.M":{"base":"DARK","glyph":5000,"plate":-5000,"contrast":99999}}}"""
+        val edit = BackupJson.decode(json)!!.edits.getValue("a/.M")
+        assertThat(edit.glyphToneOffset).isEqualTo(100)
+        assertThat(edit.plateToneOffset).isEqualTo(-100)
+        assertThat(edit.contrast).isEqualTo(100)
+    }
+
+    @Test
     fun aMinimalBackupLoads() {
         val backup = BackupJson.decode("""{"app":"Monopack","version":1}""")!!
         assertThat(backup.edits).isEmpty()

@@ -4,6 +4,10 @@ Material You themed icons you can fix per app, generated on-device and exported 
 
 _More documentation to come._
 
+## Disclaimer
+
+The icon packs Monopack makes contain other apps' icons and are meant for your own devices. If you share or distribute pack APKs, that's your responsibility, not that of Monopack's author.
+
 ## License
 
 Monopack is free software, licensed under the [GNU General Public License v3.0](LICENSE).

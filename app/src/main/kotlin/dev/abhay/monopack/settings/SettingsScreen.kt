@@ -95,6 +95,7 @@ fun SettingsScreen(
     val context = LocalContext.current
     val resources = LocalResources.current
     var showingCredits by remember { mutableStateOf(false) }
+    var showingLicenses by remember { mutableStateOf(false) }
     var choosingPack by remember { mutableStateOf(false) }
     // Turning notifications on waits for a pack to be picked first (when there's a choice).
     var enableAfterPick by remember { mutableStateOf(false) }
@@ -119,6 +120,11 @@ fun SettingsScreen(
     fun open(intent: Intent) {
         runCatching { context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             .onFailure { Toast.makeText(context, resources.getString(R.string.error_cant_open), Toast.LENGTH_SHORT).show() }
+    }
+
+    if (showingLicenses) {
+        LicensesScreen(onBack = { showingLicenses = false })
+        return
     }
 
     Scaffold(
@@ -187,7 +193,11 @@ fun SettingsScreen(
 
             Section(stringResource(R.string.settings_section_about))
             Item(stringResource(R.string.app_name), stringResource(R.string.settings_version, version)) {}
+            Item(stringResource(R.string.settings_source), REPOSITORY_URL.removePrefix("https://")) {
+                open(Intent(Intent.ACTION_VIEW, REPOSITORY_URL.toUri()))
+            }
             Item(stringResource(R.string.settings_credits), stringResource(R.string.settings_credits_summary)) { showingCredits = true }
+            Item(stringResource(R.string.licenses_title), stringResource(R.string.settings_licenses_summary)) { showingLicenses = true }
             Spacer(Modifier.height(24.dp))
         }
     }

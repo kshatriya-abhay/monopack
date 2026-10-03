@@ -15,8 +15,8 @@ import dev.abhay.monopack.ui.AppRoot
 import dev.abhay.monopack.ui.theme.MonopackTheme
 
 class MainActivity : ComponentActivity() {
-    /** Set by the new-app notification: the icon pack to update (package, label). */
-    private val updatePack = mutableStateOf<Pair<String, String?>?>(null)
+    /** Set by the new-app notification: the icon pack (package) to update; checked before use. */
+    private val updatePack = mutableStateOf<String?>(null)
 
     /** The same instance AppRoot uses (activity-scoped). */
     private val library: LibraryViewModel by viewModels { LibraryViewModel.Factory }
@@ -61,12 +61,11 @@ class MainActivity : ComponentActivity() {
 
     private fun handle(intent: Intent?) {
         val pkg = intent?.getStringExtra(EXTRA_UPDATE_PACK) ?: return
-        updatePack.value = pkg to intent.getStringExtra(EXTRA_UPDATE_PACK_LABEL)
+        updatePack.value = pkg
     }
 
     companion object {
         private const val MAX_SPLASH_MS = 2_000L
         const val EXTRA_UPDATE_PACK = "dev.abhay.monopack.UPDATE_PACK"
-        const val EXTRA_UPDATE_PACK_LABEL = "dev.abhay.monopack.UPDATE_PACK_LABEL"
     }
 }

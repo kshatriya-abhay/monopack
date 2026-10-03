@@ -131,6 +131,17 @@ class SettingsScreenTest {
     }
 
     @Test
+    fun aboutLinksTheSourceAndOpensTheLicenses() {
+        show(hintDismissed = true)
+        compose.onNodeWithText("github.com/kshatriya-abhay/monopack").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Open-source licenses").performScrollTo().performClick()
+        compose.onNodeWithText("ARSCLib").assertIsDisplayed()
+        compose.onNodeWithText("ARSCLib").performClick()
+        compose.onNodeWithText("Copyright REAndroid").assertIsDisplayed()
+        snapshot("licenses")
+    }
+
+    @Test
     fun creditsListEveryProject() {
         show(hintDismissed = true)
         compose.onNodeWithText("Open-source credits").performScrollTo().performClick()

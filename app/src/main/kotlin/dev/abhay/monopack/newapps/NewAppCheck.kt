@@ -121,7 +121,6 @@ class NewAppCheck(private val context: Context, private val store: NewAppStore, 
         val text = res.getQuantityString(R.plurals.new_apps_notification_text, apps.size, NewApps.names(apps, res), pack.label)
         val open = Intent(context, MainActivity::class.java)
             .putExtra(MainActivity.EXTRA_UPDATE_PACK, pack.packageName)
-            .putExtra(MainActivity.EXTRA_UPDATE_PACK_LABEL, pack.label)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val notification = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_launcher_monochrome)

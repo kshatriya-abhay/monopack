@@ -8,9 +8,13 @@ import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.provider.Settings
 import android.util.Log
+import dev.abhay.monopack.R
+import java.io.File
+import androidx.annotation.StringRes
 import androidx.core.content.IntentCompat
 import androidx.core.net.toUri
 import dev.abhay.monopack.appContainer
+import dev.abhay.monopack.iconpack.PackNaming
 import dev.abhay.monopack.util.catching
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -43,6 +47,8 @@ sealed interface InstallState {
  */
 class PackInstaller(
     private val context: Context,
+    /** Monopack's signing certificate: only packs signed with it are installed. */
+    private val trustedCertificate: () -> ByteArray?,
     /** App-wide, so an install isn't cut off when the screen that started it goes away. */
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
 ) {
@@ -67,30 +73,23 @@ class PackInstaller(
         _state.value = InstallState.Installing(pack, update)
         catching {
             withContext(Dispatchers.IO) {
-                val installer = context.packageManager.packageInstaller
-                val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
-                    setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
-                    setInstallReason(PackageManager.INSTALL_REASON_USER)
-                    pack.packageName?.let(::setAppPackageName)
-                }
-                val id = installer.createSession(params)
+                // Install a private copy, checked first: the library folder is shared storage, so
+                // another app with broad file access could have swapped the file.
+                val apk = File(context.cacheDir, "install/pack.apk").apply { parentFile?.mkdirs() }
                 try {
-                    installer.openSession(id).use { session ->
-                        context.contentResolver.openInputStream(pack.uri.toUri())?.use { input ->
-                            session.openWrite("pack.apk", 0, -1).use { out ->
-                                input.copyTo(out)
-                                session.fsync(out)
-                            }
-                        } ?: error("Can't read ${pack.title}")
-                        val status = Intent(context, InstallStatusReceiver::class.java)
-                        // Mutable: the installer adds the result extras.
-                        val pending = PendingIntent.getBroadcast(context, id, status, PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
-                        session.commit(pending.intentSender)
-                    }
-                } catch (e: Exception) {
-                    // Don't leave a half-written session behind (they count against a per-app limit).
-                    runCatching { installer.abandonSession(id) }
-                    throw e
+                    context.contentResolver.openInputStream(pack.uri.toUri())?.use { input -> apk.outputStream().use { input.copyTo(it) } }
+                        ?: error(context.getString(R.string.install_cant_read, pack.title))
+                    val flags = PackageManager.PackageInfoFlags.of(PackageManager.GET_SIGNING_CERTIFICATES.toLong())
+                    val info = context.packageManager.getPackageArchiveInfo(apk.path, flags)
+                    PackVerifier.problem(
+                        packageName = info?.packageName,
+                        signers = info?.signingInfo?.apkContentsSigners?.map { it.toByteArray() }.orEmpty(),
+                        expectedPackage = pack.packageName,
+                        trusted = trustedCertificate(),
+                    )?.let { error(context.getString(it)) }
+                    commit(apk, pack.packageName ?: info?.packageName)
+                } finally {
+                    apk.delete()
                 }
             }
         }.onFailure {
@@ -129,11 +128,51 @@ class PackInstaller(
         if (_state.value is InstallState.Done) _state.value = InstallState.Idle
     }
 
+    private fun commit(apk: File, packageName: String?) {
+        val installer = context.packageManager.packageInstaller
+        val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
+            setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+            setInstallReason(PackageManager.INSTALL_REASON_USER)
+            packageName?.let(::setAppPackageName)
+        }
+        val id = installer.createSession(params)
+        try {
+            installer.openSession(id).use { session ->
+                apk.inputStream().use { input ->
+                    session.openWrite("pack.apk", 0, apk.length()).use { out ->
+                        input.copyTo(out)
+                        session.fsync(out)
+                    }
+                }
+                val status = Intent(context, InstallStatusReceiver::class.java)
+                // Mutable: the installer adds the result extras.
+                val pending = PendingIntent.getBroadcast(context, id, status, PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                session.commit(pending.intentSender)
+            }
+        } catch (e: Exception) {
+            // Don't leave a half-written session behind (they count against a per-app limit).
+            runCatching { installer.abandonSession(id) }
+            throw e
+        }
+    }
+
     private fun isInstalled(packageName: String) =
         runCatching { context.packageManager.getPackageInfo(packageName, 0) }.isSuccess
 
     private companion object {
         const val TAG = "Monopack"
+    }
+}
+
+/** Checks that a file is one of this Monopack's icon packs before it's installed. */
+object PackVerifier {
+    /** Why the file shouldn't be installed (a string resource), or null if it's fine. */
+    @StringRes
+    fun problem(packageName: String?, signers: List<ByteArray>, expectedPackage: String?, trusted: ByteArray?): Int? = when {
+        packageName == null || !packageName.startsWith(PackNaming.PACKAGE_PREFIX + ".") -> R.string.install_not_a_pack
+        expectedPackage != null && packageName != expectedPackage -> R.string.install_not_a_pack
+        trusted == null || signers.none { it.contentEquals(trusted) } -> R.string.install_wrong_signer
+        else -> null
     }
 }
 

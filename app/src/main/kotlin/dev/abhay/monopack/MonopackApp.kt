@@ -53,7 +53,7 @@ class AppContainer(context: Context) {
     val exportSaver = FolderSaver(libraryStore, libraryFolder, DownloadsSaver(context))
     private val packSigner = PackSigner()
     val packInstalls = AndroidPackInstalls(context, packSigner)
-    val packInstaller = PackInstaller(context)
+    val packInstaller = PackInstaller(context, trustedCertificate = { runCatching { packSigner.certificate().encoded }.getOrNull() })
     val backupFiles = BackupFiles(context.contentResolver)
     val newAppStore = DataStoreNewAppStore(context)
     val newAppCheck = NewAppCheck(context, newAppStore, packInstalls)

@@ -1,3 +1,11 @@
+/*
+ * Portions of this file are ported from AOSP Launcher3's iconloaderlib
+ * (MonochromeIconFactory, IconNormalizer, BaseIconFactory):
+ *   Copyright (C) The Android Open Source Project
+ *   Licensed under the Apache License, Version 2.0
+ *   (https://www.apache.org/licenses/LICENSE-2.0); modified for Monopack.
+ * Monopack as a whole is licensed under the GNU General Public License v3 (see LICENSE).
+ */
 package dev.abhay.monopack.glyph
 
 import android.graphics.Bitmap

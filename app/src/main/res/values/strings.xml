@@ -336,4 +336,18 @@
         <item quantity="one">%1$d degree</item>
         <item quantity="other">%1$d degrees</item>
     </plurals>
+    <string name="install_cant_read">Can\'t read %1$s</string>
+    <string name="install_not_a_pack">This file isn\'t a Monopack icon pack</string>
+    <string name="install_wrong_signer">This pack wasn\'t made by this copy of Monopack</string>
+    <string name="license_apache">Apache License 2.0</string>
+    <string name="license_mit">MIT License</string>
+    <string name="license_bsd3">BSD 3-Clause License</string>
+    <string name="license_gpl">GNU General Public License v3</string>
+    <string name="licenses_title">Open-source licenses</string>
+    <string name="licenses_holder">%1$s · %2$s</string>
+    <string name="licenses_copyright">Copyright %1$s</string>
+    <string name="settings_source">Source code</string>
+    <string name="settings_licenses_summary">Licenses of the software Monopack includes</string>
+    <string name="onboarding_disclaimer_title">For personal use</string>
+    <string name="onboarding_disclaimer">The icon packs you make contain other apps\' icons and are meant for your own devices. If you share or distribute pack APKs, that\'s your responsibility, not that of Monopack\'s author.</string>
 </resources>

@@ -1,3 +1,11 @@
+/*
+ * The HyperOS squircle path is taken from HyperMonetIconTheme
+ * (https://github.com/VincentAzz/HyperMonetIconTheme):
+ *   Copyright its authors
+ *   Licensed under the Apache License, Version 2.0
+ *   (https://www.apache.org/licenses/LICENSE-2.0).
+ * Monopack as a whole is licensed under the GNU General Public License v3 (see LICENSE).
+ */
 package dev.abhay.monopack.render
 
 import android.graphics.Matrix

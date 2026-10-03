@@ -31,6 +31,7 @@ import dev.abhay.monopack.library.LibraryViewModel
 import dev.abhay.monopack.library.OnboardingScreen
 import dev.abhay.monopack.model.IconStyle
 import dev.abhay.monopack.render.IconShape
+import dev.abhay.monopack.util.catching
 import dev.abhay.monopack.render.LocalIconShape
 import dev.abhay.monopack.settings.SettingsScreen
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -47,7 +48,7 @@ private enum class Screen { LIBRARY, CREATE, SETTINGS }
 @Composable
 fun AppRoot(
     /** An icon pack to update (package, label), from the new-app notification; handled once. */
-    updatePack: Pair<String, String?>? = null,
+    updatePack: String? = null,
     onUpdatePackHandled: () -> Unit = {},
     library: LibraryViewModel = viewModel(factory = LibraryViewModel.Factory),
     // Created up front (activity-scoped), so apps and icons load while the home screen is showing
@@ -98,10 +99,17 @@ fun AppRoot(
         screen = Screen.CREATE
     }
     LaunchedEffect(updatePack, state.loading) {
-        val (pkg, label) = updatePack ?: return@LaunchedEffect
+        val pkg = updatePack ?: return@LaunchedEffect
         if (state.loading) return@LaunchedEffect
-        editInstalledPack(pkg, label)
         onUpdatePackHandled()
+        // MainActivity is exported, so the package comes from outside: only edit a pack that's in
+        // the library or installed and signed by this Monopack, under its real name.
+        if (state.packItem(pkg) != null) {
+            editInstalledPack(pkg, label = null)
+        } else {
+            val installed = catching { context.appContainer.newAppCheck.packs() }.getOrNull()?.firstOrNull { it.packageName == pkg }
+            if (installed != null) editInstalledPack(pkg, installed.label)
+        }
     }
 
     // Update in Edit icon pack installs the rebuilt pack as soon as it's saved.

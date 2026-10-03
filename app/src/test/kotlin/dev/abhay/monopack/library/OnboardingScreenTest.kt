@@ -31,6 +31,12 @@ class OnboardingScreenTest {
     private fun show() = compose.setContent { MonopackTheme { OnboardingScreen(lostAccess = false, error = null, onFolderPicked = {}) } }
 
     @Test
+    fun theWelcomeShowsThePersonalUseDisclaimer() {
+        show()
+        compose.onNodeWithText("For personal use").assertIsDisplayed()
+    }
+
+    @Test
     fun withoutAFolderItGuidesMakingOne() {
         folder.deleteRecursively()
         show()
