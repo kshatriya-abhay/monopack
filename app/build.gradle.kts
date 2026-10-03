@@ -1,3 +1,7 @@
+import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -61,7 +65,48 @@ android {
     }
 }
 
+/**
+ * ARSCLib bundles copies of platform classes (`android.content.res.XmlResourceParser`,
+ * `android.util.AttributeSet` and the `org.xmlpull.v1` API) so it can run on a desktop JVM. On a
+ * device the platform's versions win, but R8 prefers app classes over library ones, reasons with
+ * these stubs, and proves Compose's vector parsing unreachable (it compiles to `throw null` after
+ * `Resources.getXml`): release builds crashed on the first `painterResource` of a vector. This
+ * removes the duplicates from ARSCLib's jar.
+ */
+abstract class StripPlatformCopies : TransformAction<TransformParameters.None> {
+    @get:InputArtifact
+    abstract val input: Provider<FileSystemLocation>
+
+    override fun transform(outputs: TransformOutputs) {
+        val jar = input.get().asFile
+        if (!jar.name.startsWith("ARSCLib")) {
+            outputs.file(jar)
+            return
+        }
+        val out = outputs.file(jar.nameWithoutExtension + "-no-platform-copies.jar")
+        ZipFile(jar).use { zip ->
+            ZipOutputStream(out.outputStream()).use { stripped ->
+                for (entry in zip.entries()) {
+                    if (entry.name.startsWith("org/xmlpull/") || entry.name.startsWith("android/")) continue
+                    stripped.putNextEntry(ZipEntry(entry.name))
+                    zip.getInputStream(entry).use { it.copyTo(stripped) }
+                    stripped.closeEntry()
+                }
+            }
+        }
+    }
+}
+
+val strippedPlatformCopies = Attribute.of("monopack.strippedPlatformCopies", Boolean::class.javaObjectType)
+
 dependencies {
+    attributesSchema { attribute(strippedPlatformCopies) }
+    artifactTypes.getByName("jar") { attributes.attribute(strippedPlatformCopies, false) }
+    registerTransform(StripPlatformCopies::class) {
+        from.attribute(strippedPlatformCopies, false).attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, "jar")
+        to.attribute(strippedPlatformCopies, true).attribute(ArtifactTypeDefinition.ARTIFACT_TYPE_ATTRIBUTE, "jar")
+    }
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
@@ -90,4 +135,9 @@ dependencies {
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+}
+
+// Every classpath sees ARSCLib without its platform-class copies (see StripPlatformCopies).
+configurations.configureEach {
+    if (isCanBeResolved) attributes.attribute(strippedPlatformCopies, true)
 }
