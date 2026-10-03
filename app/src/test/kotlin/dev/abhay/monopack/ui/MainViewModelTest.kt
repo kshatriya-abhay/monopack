@@ -19,6 +19,7 @@ import dev.abhay.monopack.export.PackExporter
 import dev.abhay.monopack.export.PackRequest
 import dev.abhay.monopack.export.SavedExport
 import dev.abhay.monopack.hyperos.ThemeExporter
+import dev.abhay.monopack.iconpack.PackNaming
 import dev.abhay.monopack.model.Accent
 import dev.abhay.monopack.model.ColorSource
 import dev.abhay.monopack.model.Glyph
@@ -681,7 +682,7 @@ class MainViewModelTest {
 
         val request = packExporter.request!!
         assertThat(request.name).isEqualTo("My pack · Dark")
-        assertThat(request.fileName).isEqualTo("Mypack-Dark.apk")
+        assertThat(request.fileName).isEqualTo("Mypack-Dark-${PackNaming.fileTag("My pack · Dark")}.apk")
         val dark = wallpaper[Accent.PRIMARY]!![IconStyle.DARK]!!
         val (alpha, edited, gamma) = request.apps
         assertThat(alpha.day).isEqualTo(dark)

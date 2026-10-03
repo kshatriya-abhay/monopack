@@ -15,6 +15,12 @@ object PackNaming {
      */
     fun packageFor(name: String): String = "$PACKAGE_PREFIX.p" + sha256Hex(normalize(name)).take(10)
 
+    /** A short tag for a pack's file name ("p3fa9c1"): the start of its package's hash. */
+    fun fileTag(name: String): String = "p" + packageFor(name).substringAfterLast(".p").take(FILE_TAG_LENGTH)
+
+    /** Whether a file-name part is a [fileTag]. */
+    fun isFileTag(part: String): Boolean = FILE_TAG.matches(part)
+
     /**
      * A drawable name (`[a-z0-9_]`, starting with a letter) for a launcher entry: the package name,
      * plus the class and a short hash for entries other than the main one.
@@ -35,6 +41,9 @@ object PackNaming {
             if (count == 1) name else "${name}_$count"
         }
     }
+
+    private const val FILE_TAG_LENGTH = 6
+    private val FILE_TAG = Regex("p[0-9a-f]{$FILE_TAG_LENGTH}")
 
     private fun sanitize(value: String): String {
         val cleaned = value.lowercase().map { if (it in 'a'..'z' || it in '0'..'9') it else '_' }.joinToString("")

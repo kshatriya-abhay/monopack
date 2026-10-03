@@ -1,6 +1,7 @@
 package dev.abhay.monopack.library
 
 import dev.abhay.monopack.export.ExportKind
+import dev.abhay.monopack.iconpack.PackNaming
 import dev.abhay.monopack.model.IconStyle
 import dev.abhay.monopack.model.Selection
 import dev.abhay.monopack.render.IconShape
@@ -84,6 +85,8 @@ object Library {
             parts.removeAt(parts.size - 1)
         }
         if (kind == ExportKind.ICON_PACK && parts.lastOrNull().equals("pack", ignoreCase = true)) parts.removeAt(parts.size - 1)
+        // A pack file's name tag (ExportJobs.packFileName) isn't part of its title.
+        if (kind == ExportKind.ICON_PACK && parts.size > 1 && PackNaming.isFileTag(parts.last())) parts.removeAt(parts.size - 1)
         val style = when {
             parts.any { it.equals("Dark", ignoreCase = true) } -> IconStyle.DARK
             parts.any { it.equals("Light", ignoreCase = true) } -> IconStyle.LIGHT

@@ -1,6 +1,7 @@
 package dev.abhay.monopack.export
 
 import dev.abhay.monopack.hyperos.ExportApp
+import dev.abhay.monopack.iconpack.PackNaming
 import dev.abhay.monopack.hyperos.ExportRequest
 import dev.abhay.monopack.hyperos.MtzNaming
 import dev.abhay.monopack.model.IconEdit
@@ -43,7 +44,7 @@ object ExportJobs {
             PackRequest(
                 name = name,
                 // One file per pack: re-exporting replaces it.
-                fileName = fileNameFor(name, now = null, extension = "apk"),
+                fileName = packFileName(name),
                 versionCode = (now.atZone(ZoneId.systemDefault()).toEpochSecond() / 60).toInt(),
                 versionName = now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")),
                 apps = apps.map { app ->
@@ -95,6 +96,19 @@ object ExportJobs {
 
     /** "Monopack · Blue · Dark". */
     fun titleFor(name: String, style: IconStyle) = "${name.trim().ifEmpty { "Monopack" }} · ${if (style == IconStyle.DARK) "Dark" else "Light"}"
+
+    /**
+     * An icon pack's file: "Monopack-Blue-Dark.apk" when the name can be read back from it exactly
+     * (the library rebuilds titles from file names), else with a tag from the pack's package,
+     * "BlueNight-p3fa9c1.apk" for "Blue Night". File names keep only letters and digits, so without
+     * the tag different packs ("Monopack!" and "Monopack") would share a file and replace each other.
+     */
+    fun packFileName(name: String): String {
+        val plain = fileNameFor(name, now = null, extension = "apk")
+        val readBack = plain.removeSuffix(".apk").split('-').joinToString(" · ")
+        if (PackNaming.normalize(readBack) == PackNaming.normalize(name)) return plain
+        return plain.removeSuffix(".apk") + "-" + PackNaming.fileTag(name) + ".apk"
+    }
 
     /**
      * "Monopack-Blue-Dark-20260927-1015.mtz" (letters and digits of each part), or without the
