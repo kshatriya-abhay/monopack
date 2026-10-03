@@ -1,3 +1,4 @@
+import java.util.Properties
 import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
 import java.util.zip.ZipOutputStream
@@ -6,6 +7,15 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
+
+// Release signing: keystore.properties in the project root (git-ignored: storeFile, storePassword,
+// keyAlias, keyPassword), or the SIGNING_STORE_FILE, SIGNING_STORE_PASSWORD, SIGNING_KEY_ALIAS and
+// SIGNING_KEY_PASSWORD environment variables. Without either, release builds are unsigned.
+val keystoreProperties = Properties().apply {
+    rootProject.file("keystore.properties").takeIf { it.exists() }?.inputStream()?.use(::load)
+}
+fun signingValue(property: String, variable: String): String? =
+    keystoreProperties.getProperty(property) ?: providers.environmentVariable(variable).orNull
 
 android {
     namespace = "dev.abhay.monopack"
@@ -23,8 +33,21 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        val storeFile = signingValue("storeFile", "SIGNING_STORE_FILE")
+        if (storeFile != null) {
+            create("release") {
+                this.storeFile = file(storeFile)
+                storePassword = signingValue("storePassword", "SIGNING_STORE_PASSWORD")
+                keyAlias = signingValue("keyAlias", "SIGNING_KEY_ALIAS")
+                keyPassword = signingValue("keyPassword", "SIGNING_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfigs.findByName("release")?.let { signingConfig = it }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
