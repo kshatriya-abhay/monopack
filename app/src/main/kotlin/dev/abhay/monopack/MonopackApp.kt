@@ -34,8 +34,9 @@ class MonopackApp : Application() {
     override fun onCreate() {
         super.onCreate()
         // Re-sync the new-app check with its setting (e.g. after an update cleared scheduled jobs).
+        // Its own store, not [container]: building that touches Dispatchers.Main from this thread.
         CoroutineScope(Dispatchers.IO).launch {
-            catching { NewAppJob.sync(this@MonopackApp, container.newAppStore.loadEnabled()) }
+            catching { NewAppJob.sync(this@MonopackApp, DataStoreNewAppStore(this@MonopackApp).loadEnabled()) }
         }
     }
 }
