@@ -11,6 +11,7 @@ import android.os.SystemClock
 import android.util.Log
 import dev.abhay.monopack.R
 import java.io.File
+import java.util.Collections
 import androidx.annotation.StringRes
 import androidx.core.content.IntentCompat
 import androidx.core.net.toUri
@@ -65,6 +66,9 @@ class PackInstaller(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
 ) {
     private val _state = MutableStateFlow<InstallState>(InstallState.Idle)
+
+    /** Sessions replaced by a newer install (their results are ignored). */
+    private val abandoned = Collections.synchronizedSet(mutableSetOf<Int>())
     val state: StateFlow<InstallState> = _state.asStateFlow()
 
     /** Whether the user allows Monopack to install apps. */
@@ -78,7 +82,11 @@ class PackInstaller(
     fun install(pack: PackToInstall) {
         when (val decision = InstallGate.decide(_state.value, SystemClock.elapsedRealtime())) {
             InstallGate.Decision.Busy -> return
-            is InstallGate.Decision.Replace -> decision.sessionId?.let { id -> runCatching { context.packageManager.packageInstaller.abandonSession(id) } }
+            is InstallGate.Decision.Replace -> decision.sessionId?.let { id ->
+                // Its "aborted" result arrives later; it must not count as the new install's result.
+                abandoned += id
+                runCatching { context.packageManager.packageInstaller.abandonSession(id) }
+            }
             InstallGate.Decision.Start -> Unit
         }
         scope.launch { installNow(pack) }
@@ -123,7 +131,8 @@ class PackInstaller(
             else -> return
         }
         // A replaced session can still report (e.g. "aborted"); only the current one counts.
-        if (!InstallGate.isCurrent(current, intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1))) return
+        val sessionId = intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1)
+        if (sessionId in abandoned || !InstallGate.isCurrent(current, sessionId)) return
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
         _state.value = when (status) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
