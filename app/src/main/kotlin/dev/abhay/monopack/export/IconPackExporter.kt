@@ -67,7 +67,7 @@ interface PackExporter {
 class IconPackExporter(
     private val context: Context,
     private val icons: IconSourceLoader,
-    private val signer: PackSigner = PackSigner(),
+    private val signer: PackSigner,
 ) : PackExporter {
     private val renderDispatcher = Dispatchers.Default.limitedParallelism(3)
 

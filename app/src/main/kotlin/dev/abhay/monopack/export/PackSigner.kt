@@ -15,14 +15,28 @@ import java.security.spec.ECGenParameterSpec
 import java.util.Date
 import javax.security.auth.x500.X500Principal
 
+/** Where the signing key lives: the Android Keystore in the app, a fake in tests. */
+interface SigningKeys {
+    /** The key and certificate, or null if the store reports the key doesn't exist. Throws on other errors. */
+    fun load(): Pair<PrivateKey, X509Certificate>?
+
+    fun generate()
+}
+
 /**
  * Signs icon packs with apksig (AOSP, Apache-2.0), v2 + v3.
  *
  * One EC P-256 key per Monopack install, kept in the Android Keystore (never leaves the device),
  * with the self-signed certificate the Keystore creates. Every pack is signed with it, so
  * re-exporting a pack name produces an update of the installed pack.
+ *
+ * Losing the key would break updates of every installed pack for good, so a new key is only made
+ * when there has never been one: once it exists, a marker file is kept in [markerDir] (no-backup
+ * storage, cleared together with the Keystore key), and a key that reads as missing while the
+ * marker exists is an error to retry, not a reason to replace it.
  */
-class PackSigner(private val alias: String = ALIAS) {
+class PackSigner(private val markerDir: File? = null, private val keys: SigningKeys = AndroidKeystoreKeys(ALIAS)) {
+    private var loaded: Pair<PrivateKey, X509Certificate>? = null
 
     /** Signs [unsigned] into [signed]. */
     fun sign(unsigned: File, signed: File) {
@@ -44,13 +58,38 @@ class PackSigner(private val alias: String = ALIAS) {
 
     @Synchronized
     private fun keyAndCertificate(): Pair<PrivateKey, X509Certificate> {
+        loaded?.let { return it }
+        val marker = markerDir?.let { File(it, MARKER) }
+        val result = keys.load() ?: run {
+            check(marker?.exists() != true) { "The signing key is unavailable right now; try again" }
+            keys.generate()
+            checkNotNull(keys.load()) { "Couldn't create the signing key" }
+        }
+        if (marker != null && !marker.exists()) {
+            marker.parentFile?.mkdirs()
+            marker.createNewFile()
+        }
+        loaded = result
+        return result
+    }
+
+    companion object {
+        const val ALIAS = "monopack_pack_signer"
+        private const val MARKER = "pack_signer_key_created"
+    }
+}
+
+/** The key in the Android Keystore. */
+class AndroidKeystoreKeys(private val alias: String) : SigningKeys {
+    override fun load(): Pair<PrivateKey, X509Certificate>? {
         val keyStore = KeyStore.getInstance(KEYSTORE).apply { load(null) }
-        if (!keyStore.containsAlias(alias)) generate()
-        val entry = keyStore.getEntry(alias, null) as KeyStore.PrivateKeyEntry
+        // getEntry returns null only when the key doesn't exist (containsAlias also said false on
+        // transient Keystore errors, which once meant generating over the real key).
+        val entry = keyStore.getEntry(alias, null) as? KeyStore.PrivateKeyEntry ?: return null
         return entry.privateKey to entry.certificate as X509Certificate
     }
 
-    private fun generate() {
+    override fun generate() {
         val now = System.currentTimeMillis()
         val spec = KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_SIGN)
             .setAlgorithmParameterSpec(ECGenParameterSpec("secp256r1"))
@@ -63,10 +102,9 @@ class PackSigner(private val alias: String = ALIAS) {
         KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_EC, KEYSTORE).apply { initialize(spec) }.generateKeyPair()
     }
 
-    companion object {
-        const val ALIAS = "monopack_pack_signer"
-        private const val KEYSTORE = "AndroidKeyStore"
-        private const val DAY_MS = 24L * 60 * 60 * 1000
-        private const val VALIDITY_YEARS = 30L
+    private companion object {
+        const val KEYSTORE = "AndroidKeyStore"
+        const val DAY_MS = 24L * 60 * 60 * 1000
+        const val VALIDITY_YEARS = 30L
     }
 }
