@@ -2,9 +2,11 @@ package dev.abhay.monopack.data
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -56,7 +58,11 @@ interface SelectionStore {
     suspend fun saveExportTarget(target: String)
 }
 
-private val Context.selectionDataStore: DataStore<Preferences> by preferencesDataStore(name = "selection")
+private val Context.selectionDataStore: DataStore<Preferences> by preferencesDataStore(
+    name = "selection",
+    // A corrupt file is replaced with empty settings rather than crashing every launch.
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)
 
 /** [SelectionStore] backed by Preferences DataStore. Unknown or missing values fall back to null. */
 class DataStoreSelectionStore(context: Context) : SelectionStore {

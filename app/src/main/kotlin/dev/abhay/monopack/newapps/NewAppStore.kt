@@ -2,9 +2,11 @@ package dev.abhay.monopack.newapps
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -26,7 +28,11 @@ interface NewAppStore {
     suspend fun saveWatchedPack(packageName: String) = Unit
 }
 
-private val Context.newAppDataStore: DataStore<Preferences> by preferencesDataStore(name = "new_apps")
+private val Context.newAppDataStore: DataStore<Preferences> by preferencesDataStore(
+    name = "new_apps",
+    // A corrupt file is replaced with empty settings rather than crashing every launch.
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)
 
 class DataStoreNewAppStore(context: Context) : NewAppStore {
     private val store = context.applicationContext.newAppDataStore

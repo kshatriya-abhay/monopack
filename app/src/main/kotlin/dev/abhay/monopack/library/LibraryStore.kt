@@ -2,9 +2,11 @@ package dev.abhay.monopack.library
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dev.abhay.monopack.data.SelectionJson
@@ -42,7 +44,11 @@ interface LibraryStore {
     suspend fun saveInstallStepDone()
 }
 
-private val Context.libraryDataStore: DataStore<Preferences> by preferencesDataStore(name = "library")
+private val Context.libraryDataStore: DataStore<Preferences> by preferencesDataStore(
+    name = "library",
+    // A corrupt file is replaced with empty settings rather than crashing every launch.
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)
 
 class DataStoreLibraryStore(context: Context) : LibraryStore {
     private val store = context.applicationContext.libraryDataStore

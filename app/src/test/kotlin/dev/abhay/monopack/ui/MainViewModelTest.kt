@@ -91,6 +91,8 @@ class MainViewModelTest {
         val gate: CompletableDeferred<Unit>? = null,
         var edits: Map<String, IconEdit> = emptyMap(),
         val editsGate: CompletableDeferred<Unit>? = null,
+        /** Every write fails, like a full disk. */
+        val failWrites: Boolean = false,
     ) : SelectionStore {
         override suspend fun load(): SavedSelections? {
             gate?.await()
@@ -98,6 +100,7 @@ class MainViewModelTest {
         }
 
         override suspend fun save(saved: SavedSelections) {
+            if (failWrites) throw java.io.IOException("No space left on device")
             this.saved = saved
         }
 
@@ -107,6 +110,7 @@ class MainViewModelTest {
         }
 
         override suspend fun saveEdits(edits: Map<String, IconEdit>) {
+            if (failWrites) throw java.io.IOException("No space left on device")
             this.edits = edits
         }
 
@@ -441,6 +445,17 @@ class MainViewModelTest {
         assertThat(s.pending.seed).isEqualTo(blue)
         assertThat(s.activePalettes).isEqualTo(blue.palettes())
         assertThat(s.committedPalette).isEqualTo(blue.palettes()[Accent.PRIMARY]!![IconStyle.LIGHT])
+    }
+
+    @Test
+    fun `failed saves don't crash`() = runTest(dispatcher) {
+        // An uncaught exception in viewModelScope would fail this test (and crash the app).
+        val vm = viewModel(FakeStore(failWrites = true))
+        advanceUntilIdle()
+        vm.setAccent(Accent.TERTIARY)
+        vm.saveEdit(vm.state.value.items[0].app.key, IconEdit(IconStyle.DARK))
+        advanceUntilIdle()
+        assertThat(vm.state.value.committed!!.accent).isEqualTo(Accent.TERTIARY)
     }
 
     @Test

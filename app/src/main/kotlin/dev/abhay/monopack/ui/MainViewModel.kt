@@ -494,7 +494,9 @@ class MainViewModel(
         _state.update(change)
         val s = _state.value
         viewModelScope.launch {
-            store.save(SavedSelections(s.pending, s.committed, s.committedPalette, s.committedOppositePalette))
+            // A failed save (storage full, say) only loses the selection on restart; it must not crash.
+            catching { store.save(SavedSelections(s.pending, s.committed, s.committedPalette, s.committedOppositePalette)) }
+                .onFailure { Log.w(TAG, "Saving the selection failed", it) }
         }
     }
 
