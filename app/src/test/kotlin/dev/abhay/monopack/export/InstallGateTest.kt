@@ -41,4 +41,14 @@ class InstallGateTest {
         assertThat(InstallGate.isCurrent(current, sessionId = 7)).isFalse()
         assertThat(InstallGate.isCurrent(InstallState.Idle, sessionId = 9)).isFalse()
     }
+
+    @Test
+    fun onlyTheSystemsRefusalCountsAsSilentRefused() {
+        val aborted = android.content.pm.PackageInstaller.STATUS_FAILURE_ABORTED
+        assertThat(InstallGate.silentRefused(aborted, "INSTALL_FAILED_ABORTED: Permission denied")).isTrue()
+        // The user cancelling, or Play Protect turning the install down, stands.
+        assertThat(InstallGate.silentRefused(aborted, null)).isFalse()
+        assertThat(InstallGate.silentRefused(aborted, "INSTALL_FAILED_VERIFICATION_FAILURE: Install not allowed")).isFalse()
+        assertThat(InstallGate.silentRefused(android.content.pm.PackageInstaller.STATUS_FAILURE, "Permission denied")).isFalse()
+    }
 }

@@ -45,6 +45,8 @@ sealed interface InstallState {
         val sessionId: Int? = null,
         val awaitingUser: Boolean = false,
         val startedAt: Long = 0,
+        /** The session asked to install without a prompt (it may be refused, then retried asking). */
+        val silent: Boolean = true,
     ) : InstallState
 
     /** Android wants the user to confirm (first install, or a pack another app installed). */
@@ -66,6 +68,13 @@ class PackInstaller(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
 ) {
     private val _state = MutableStateFlow<InstallState>(InstallState.Idle)
+
+    /**
+     * Whether silent updates are allowed here. Some systems (HyperOS) reject a session that asks
+     * for no prompt ("Permission denied") instead of asking the user; then installs ask.
+     */
+    @Volatile
+    private var silentAllowed = true
 
     /** Sessions replaced by a newer install (their results are ignored). */
     private val abandoned = Collections.synchronizedSet(mutableSetOf<Int>())
@@ -94,7 +103,8 @@ class PackInstaller(
 
     private suspend fun installNow(pack: PackToInstall) {
         val update = pack.packageName?.let { isInstalled(it) } ?: false
-        _state.value = InstallState.Installing(pack, update, startedAt = SystemClock.elapsedRealtime())
+        val silent = silentAllowed
+        _state.value = InstallState.Installing(pack, update, startedAt = SystemClock.elapsedRealtime(), silent = silent)
         catching {
             withContext(Dispatchers.IO) {
                 // Install a private copy, checked first: the library folder is shared storage, so
@@ -111,7 +121,7 @@ class PackInstaller(
                         expectedPackage = pack.packageName,
                         trusted = trustedCertificate(),
                     )?.let { error(context.getString(it)) }
-                    commit(apk, pack.packageName ?: info?.packageName)
+                    commit(apk, pack.packageName ?: info?.packageName, silent)
                 } finally {
                     apk.delete()
                 }
@@ -134,6 +144,17 @@ class PackInstaller(
         val sessionId = intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1)
         if (sessionId in abandoned || !InstallGate.isCurrent(current, sessionId)) return
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
+        val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
+        if (status != PackageInstaller.STATUS_SUCCESS) Log.i(TAG, "Install session $sessionId: status $status ($message)")
+        // A silent install refused before any prompt (HyperOS: "Permission denied"): ask the user
+        // instead, now and from then on. Other aborts stand: a user's "Cancel", or Play Protect
+        // turning the install down.
+        if (InstallGate.silentRefused(status, message) && current is InstallState.Installing && current.silent && !current.awaitingUser) {
+            Log.i(TAG, "Silent install refused; asking the user instead")
+            silentAllowed = false
+            scope.launch { installNow(pack) }
+            return
+        }
         _state.value = when (status) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                 val confirm = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_INTENT, Intent::class.java)
@@ -145,7 +166,7 @@ class PackInstaller(
             }
             PackageInstaller.STATUS_SUCCESS -> InstallState.Done(pack, update, success = true, message = null)
             PackageInstaller.STATUS_FAILURE_ABORTED -> InstallState.Done(pack, update, success = false, message = null)
-            else -> InstallState.Done(pack, update, success = false, message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE))
+            else -> InstallState.Done(pack, update, success = false, message = message)
         }
     }
 
@@ -159,10 +180,12 @@ class PackInstaller(
         if (_state.value is InstallState.Done) _state.value = InstallState.Idle
     }
 
-    private fun commit(apk: File, packageName: String?) {
+    private fun commit(apk: File, packageName: String?, silent: Boolean) {
         val installer = context.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
-            setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+            setRequireUserAction(
+                if (silent) PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED else PackageInstaller.SessionParams.USER_ACTION_REQUIRED,
+            )
             setInstallReason(PackageManager.INSTALL_REASON_USER)
             packageName?.let(::setAppPackageName)
         }
@@ -230,6 +253,13 @@ object InstallGate {
         }
         return current == null || sessionId < 0 || current == sessionId
     }
+
+    /**
+     * Whether a result is the system refusing a silent install outright (HyperOS reports
+     * "INSTALL_FAILED_ABORTED: Permission denied"), as opposed to the user or Play Protect saying no.
+     */
+    fun silentRefused(status: Int, message: String?): Boolean =
+        status == PackageInstaller.STATUS_FAILURE_ABORTED && message?.contains("Permission denied", ignoreCase = true) == true
 }
 
 /** Checks that a file is one of this Monopack's icon packs before it's installed. */
