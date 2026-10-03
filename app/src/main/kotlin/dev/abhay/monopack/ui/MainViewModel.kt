@@ -88,8 +88,10 @@ data class UiState(
     val paletteLooksDefault: Boolean = false,
     /** The default-palette banner was dismissed (for this session). */
     val defaultPaletteBannerDismissed: Boolean = false,
-    /** Palettes generated from the pending custom seed. */
+    /** Palettes generated from [customPalettesSeed]; kept in step with the pending seed by [withCustomPalettes]. */
     val customPalettes: Map<Accent, Map<IconStyle, IconPalette>> = emptyMap(),
+    /** The seed [customPalettes] were built from (null: not built yet). */
+    val customPalettesSeed: Seed? = null,
     /** What the controls show. */
     val pending: Selection = Selection(IconStyle.LIGHT, Accent.PRIMARY),
     /** What the grid shows; null until the first Preview. */
@@ -203,6 +205,7 @@ class MainViewModel(
                 palettes = system,
                 paletteLooksDefault = DefaultPalette.looksDefault(system),
                 customPalettes = pending.seed.palettes(),
+                customPalettesSeed = pending.seed,
                 pending = pending,
             )
         },
@@ -311,14 +314,14 @@ class MainViewModel(
 
     fun setAccent(accent: Accent) = edit { it.copy(pending = it.pending.copy(accent = accent)) }
 
-    fun setColorSource(source: ColorSource) = edit { it.copy(pending = it.pending.copy(source = source)) }
+    fun setColorSource(source: ColorSource) = edit {
+        val changed = it.copy(pending = it.pending.copy(source = source))
+        if (source == ColorSource.CUSTOM) changed.withCustomPalettes(changed.pending.seed) else changed
+    }
 
     /** Picks a preset or custom seed (and switches the source to Custom). */
     fun setSeed(seed: Seed) = edit {
-        it.copy(
-            pending = it.pending.copy(source = ColorSource.CUSTOM, seed = seed),
-            customPalettes = if (seed == it.pending.seed) it.customPalettes else seed.palettes(),
-        )
+        it.copy(pending = it.pending.copy(source = ColorSource.CUSTOM, seed = seed)).withCustomPalettes(seed)
     }
 
     /**
@@ -352,12 +355,18 @@ class MainViewModel(
     /** The controls set to [selection] (custom colours get their palettes); unchanged for null. */
     private fun UiState.withSelection(selection: Selection?): UiState = when {
         selection == null -> this
-        selection.source == ColorSource.CUSTOM -> copy(
-            pending = selection,
-            customPalettes = if (selection.seed == pending.seed && customPalettes.isNotEmpty()) customPalettes else selection.seed.palettes(),
-        )
+        selection.source == ColorSource.CUSTOM -> copy(pending = selection).withCustomPalettes(selection.seed)
+        // Switching to Custom later rebuilds the palettes for this selection's seed.
         else -> copy(pending = selection)
     }
+
+    /**
+     * [customPalettes] for [seed], rebuilt only if they were built for another seed. Every change
+     * to the pending seed (or to Custom) goes through this, so Custom never shows one seed's
+     * colours under another seed's name.
+     */
+    private fun UiState.withCustomPalettes(seed: Seed): UiState =
+        if (customPalettesSeed == seed && customPalettes.isNotEmpty()) this else copy(customPalettes = seed.palettes(), customPalettesSeed = seed)
 
     /** A backup of the icon edits and the controls' colours ([iconShape] comes from the library). */
     fun backup(iconShape: String?): Backup = Backup(_state.value.edits, _state.value.pending, iconShape)
@@ -507,6 +516,7 @@ class MainViewModel(
             it.copy(
                 pending = saved.pending,
                 customPalettes = customPalettes,
+                customPalettesSeed = saved.pending.seed,
                 committed = committed,
                 committedPalette = saved.committedPalette,
                 committedOppositePalette = oppositePalette,

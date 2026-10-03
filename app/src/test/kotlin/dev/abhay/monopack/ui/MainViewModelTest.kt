@@ -426,6 +426,23 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `custom colours always match the selected seed`() = runTest(dispatcher) {
+        val vm = viewModel()
+        advanceUntilIdle()
+        val blue = SeedPresets.AOSP[4]
+        val green = SeedPresets.AOSP[3]
+        // Custom Green first, then edit a pack recorded in Wallpaper mode with the default (Blue) seed.
+        vm.setSeed(green)
+        vm.editPack(PackToEdit("A", setOf(IconStyle.LIGHT, IconStyle.DARK)), Selection(IconStyle.LIGHT, Accent.PRIMARY, ColorSource.WALLPAPER, blue))
+        vm.setColorSource(ColorSource.CUSTOM)
+        advanceUntilIdle()
+        val s = vm.state.value
+        assertThat(s.pending.seed).isEqualTo(blue)
+        assertThat(s.activePalettes).isEqualTo(blue.palettes())
+        assertThat(s.committedPalette).isEqualTo(blue.palettes()[Accent.PRIMARY]!![IconStyle.LIGHT])
+    }
+
+    @Test
     fun `cancel clears the selection`() = runTest(dispatcher) {
         val vm = viewModel()
         advanceUntilIdle()
