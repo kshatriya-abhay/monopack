@@ -101,14 +101,19 @@ fun AppRoot(
     LaunchedEffect(updatePack, state.loading) {
         val pkg = updatePack ?: return@LaunchedEffect
         if (state.loading) return@LaunchedEffect
-        onUpdatePackHandled()
-        // MainActivity is exported, so the package comes from outside: only edit a pack that's in
-        // the library or installed and signed by this Monopack, under its real name.
-        if (state.packItem(pkg) != null) {
-            editInstalledPack(pkg, label = null)
-        } else {
-            val installed = catching { context.appContainer.newAppCheck.packs() }.getOrNull()?.firstOrNull { it.packageName == pkg }
-            if (installed != null) editInstalledPack(pkg, installed.label)
+        // Cleared only at the end: updatePack is this effect's key, so clearing it first would
+        // cancel the effect while it looks the pack up.
+        try {
+            // MainActivity is exported, so the package comes from outside: only edit a pack that's in
+            // the library or installed and signed by this Monopack, under its real name.
+            if (state.packItem(pkg) != null) {
+                editInstalledPack(pkg, label = null)
+            } else {
+                val installed = catching { context.appContainer.newAppCheck.packs() }.getOrNull()?.firstOrNull { it.packageName == pkg }
+                if (installed != null) editInstalledPack(pkg, installed.label)
+            }
+        } finally {
+            onUpdatePackHandled()
         }
     }
 
