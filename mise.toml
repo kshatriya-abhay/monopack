@@ -1,0 +1,40 @@
+[tools]
+java = "temurin-21"   # JDK for Gradle/AGP
+gradle = "9.8.0"      # only used to bootstrap the wrapper; builds use ./gradlew
+
+[env]
+ANDROID_HOME = "{{env.HOME}}/Android/Sdk"
+_.path = [
+  "{{env.HOME}}/Android/Sdk/cmdline-tools/latest/bin",
+  "{{env.HOME}}/Android/Sdk/platform-tools",
+]
+
+[tasks.bootstrap]
+description = "Generate the Gradle wrapper and local.properties"
+run = [
+  "gradle wrapper --gradle-version 9.8.0 --distribution-type bin --no-validate-url",
+  "echo \"sdk.dir=$ANDROID_HOME\" > local.properties",
+]
+
+[tasks.build]
+run = "./gradlew assembleDebug"
+
+[tasks.test]
+run = "./gradlew testDebugUnitTest"
+
+[tasks.install]
+run = "./gradlew installDebug"
+
+[tasks.run]
+description = "Install and launch on the connected device"
+depends = ["install"]
+run = "adb shell am start -n dev.abhay.monopack/.MainActivity"
+
+[tasks.check-pack]
+description = "Inspect and verify an icon pack APK: mise run check-pack <file.apk>"
+run = '''
+BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
+"$BT/aapt2" dump badging "{{arg(name='apk')}}" | head -8
+"$BT/aapt2" dump permissions "{{arg(name='apk')}}"
+"$BT/apksigner" verify -v --print-certs "{{arg(name='apk')}}" | grep -E "Verifies|scheme \(|DN"
+'''

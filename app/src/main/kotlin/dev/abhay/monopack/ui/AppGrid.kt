@@ -1,0 +1,334 @@
+package dev.abhay.monopack.ui
+
+import androidx.annotation.StringRes
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Velocity
+import androidx.compose.ui.unit.dp
+import dev.abhay.monopack.R
+import dev.abhay.monopack.model.GlyphSource
+import dev.abhay.monopack.render.LocalIconShape
+import kotlin.math.abs
+
+const val GRID_COLUMNS = 5
+
+/**
+ * The 5-column drawer. Until the icons are ready ([colorsFor] returns null) it shows the original
+ * icons; afterwards every app is drawn as a themed icon in its own (possibly edited) colours.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun AppGrid(
+    items: List<DrawerItem>,
+    /** Colours for each app (edits applied); null while loading, which shows originals. */
+    colorsFor: (DrawerItem) -> IconColors?,
+    /** Glyph contrast edit (0..100) per item. */
+    contrastFor: (DrawerItem) -> Int = { 0 },
+    /** Apps with an icon edit get the Edited marker. */
+    edited: Set<String> = emptySet(),
+    header: GridHeader,
+    contentPadding: PaddingValues,
+    selected: Set<String>,
+    onItemClick: (DrawerItem) -> Unit,
+    onItemLongClick: (DrawerItem) -> Unit,
+    /** Called once per scroll gesture started by the user. */
+    onUserScroll: () -> Unit = {},
+) {
+    val layoutDirection = LocalLayoutDirection.current
+    val currentOnUserScroll by rememberUpdatedState(onUserScroll)
+    val scrollWatcher = remember {
+        object : NestedScrollConnection {
+            private var inGesture = false
+
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (!inGesture && source == NestedScrollSource.UserInput && abs(available.y) > 0.5f) {
+                    inGesture = true
+                    currentOnUserScroll()
+                }
+                return Offset.Zero
+            }
+
+            // The drag has ended (a fling may follow); the next drag counts as a new gesture.
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                inGesture = false
+                return Velocity.Zero
+            }
+        }
+    }
+    val gridState = rememberLazyGridState()
+    // The default-palette banner is the first item: scroll up so it's seen when it appears.
+    LaunchedEffect(header.showDefaultPaletteBanner) {
+        if (header.showDefaultPaletteBanner) gridState.animateScrollToItem(0)
+    }
+    // The filter chips appear once icons are ready, above the first app; the grid keeps that app
+    // in view, which hid them. Back to the top unless the user has scrolled down.
+    LaunchedEffect(header.showCountsReady) {
+        if (header.showCountsReady && gridState.firstVisibleItemIndex <= 2) gridState.scrollToItem(0)
+    }
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(GRID_COLUMNS),
+        state = gridState,
+        modifier = Modifier.fillMaxSize().nestedScroll(scrollWatcher),
+        contentPadding = PaddingValues(
+            start = contentPadding.calculateStartPadding(layoutDirection) + 8.dp,
+            end = contentPadding.calculateEndPadding(layoutDirection) + 8.dp,
+            top = contentPadding.calculateTopPadding() + 12.dp,
+            bottom = contentPadding.calculateBottomPadding() + 12.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        if (header.showDefaultPaletteBanner) {
+            item(key = "default-palette", span = { GridItemSpan(maxLineSpan) }) {
+                DefaultPaletteBanner(header.onUseCustomColours, header.onDismissDefaultPaletteBanner)
+            }
+        }
+        if (!header.previewed) {
+            item(key = "hint", span = { GridItemSpan(maxLineSpan) }) { HintCard() }
+        }
+        if (header.showCountsReady) {
+            item(key = "filter", span = { GridItemSpan(maxLineSpan) }) { FilterRow(header) }
+        }
+        header.emptyMessage?.let { message ->
+            item(key = "empty", span = { GridItemSpan(maxLineSpan) }) {
+                Text(
+                    message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(24.dp),
+                )
+            }
+        }
+        items(items, key = { it.app.key }) { item ->
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .combinedClickable(
+                        onClickLabel = if (selected.isNotEmpty()) stringResource(R.string.action_select) else stringResource(R.string.editor_title),
+                        onLongClickLabel = stringResource(R.string.grid_select_to_edit),
+                        onClick = { onItemClick(item) },
+                        onLongClick = { onItemLongClick(item) },
+                    )
+                    .padding(vertical = 4.dp),
+            ) {
+                val key = item.app.key
+                val itemColors = colorsFor(item)
+                Crossfade(targetState = itemColors, label = "icon") { current ->
+                    GridIcon(item, current, contrastFor(item), selected = key in selected)
+                }
+                Spacer(Modifier.height(6.dp))
+                // Edited apps have their name in bold.
+                val isEdited = key in edited
+                Text(
+                    text = item.app.label,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = if (isEdited) FontWeight.Bold else null,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 2.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun GridIcon(item: DrawerItem, colors: IconColors?, contrast: Int, selected: Boolean) {
+    val scale by animateFloatAsState(if (selected) 0.86f else 1f, label = "select")
+    Box(Modifier.size(MainViewModel.GRID_ICON_DP.dp)) {
+        val original = item.original
+        when {
+            colors != null && item.glyph != null -> {
+                ThemedIcon(
+                    glyph = rememberContrastGlyph(item.glyphImage, contrast),
+                    colors = colors,
+                    modifier = Modifier.fillMaxSize().scale(scale),
+                )
+                if (selected) {
+                    SelectedMark(Modifier.align(Alignment.BottomEnd))
+                } else if (item.app.user != null) {
+                    WorkBadge(Modifier.align(Alignment.BottomEnd))
+                }
+            }
+            original != null -> Image(
+                bitmap = original,
+                contentDescription = item.app.label,
+                modifier = Modifier.fillMaxSize(),
+            )
+            else -> Box(
+                Modifier
+                    .fillMaxSize()
+                    .clip(LocalIconShape.current)
+                    .background(MaterialTheme.colorScheme.surfaceVariant),
+            )
+        }
+    }
+}
+
+/** The work-profile badge (a briefcase), as launchers show it on work apps. */
+@Composable
+private fun WorkBadge(modifier: Modifier) {
+    val description = stringResource(R.string.info_profile_work)
+    Box(
+        modifier
+            .size(20.dp)
+            .background(MaterialTheme.colorScheme.surface, CircleShape)
+            .padding(2.dp)
+            .background(MaterialTheme.colorScheme.tertiary, CircleShape)
+            .semantics { contentDescription = description },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(Symbols.Work, contentDescription = null, tint = MaterialTheme.colorScheme.onTertiary, modifier = Modifier.size(11.dp))
+    }
+}
+
+/** A filled check mark on selected icons. */
+@Composable
+private fun SelectedMark(modifier: Modifier) {
+    val fill = MaterialTheme.colorScheme.primary
+    val check = MaterialTheme.colorScheme.onPrimary
+    val ring = MaterialTheme.colorScheme.surface
+    val description = stringResource(R.string.state_selected)
+    Canvas(modifier.size(20.dp).semantics { contentDescription = description }) {
+        drawCircle(ring)
+        drawCircle(fill, radius = size.minDimension / 2 - 2.dp.toPx())
+        val path = Path().apply {
+            moveTo(size.width * 0.3f, size.height * 0.52f)
+            lineTo(size.width * 0.45f, size.height * 0.66f)
+            lineTo(size.width * 0.72f, size.height * 0.38f)
+        }
+        drawPath(path, check, style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
+}
+
+/** Content shown above the icons. */
+data class GridHeader(
+    /** Themed icons are shown (the colours have been applied). */
+    val previewed: Boolean,
+    val filter: GridFilter,
+    val counts: Map<GridFilter, Int>,
+    val showCountsReady: Boolean,
+    val showDefaultPaletteBanner: Boolean,
+    val onFilterChange: (GridFilter) -> Unit,
+    val onUseCustomColours: () -> Unit,
+    val onDismissDefaultPaletteBanner: () -> Unit = {},
+    /** Shown when nothing matches the search, e.g. "No apps match \"xyz\"". */
+    val emptyMessage: String? = null,
+)
+
+@Composable
+private fun FilterRow(header: GridHeader) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp),
+    ) {
+        GridFilter.entries.filter { it != GridFilter.EDITED || (header.counts[it] ?: 0) > 0 || header.filter == it }.forEach { filter ->
+            FilterChip(
+                selected = header.filter == filter,
+                onClick = { header.onFilterChange(filter) },
+                label = { Text(stringResource(R.string.grid_filter_count, stringResource(filter.label), header.counts[filter] ?: 0)) },
+            )
+        }
+    }
+}
+
+@get:StringRes
+private val GridFilter.label: Int
+    get() = when (this) {
+        GridFilter.ALL -> R.string.filter_all
+        GridFilter.NATIVE -> R.string.filter_native
+        GridFilter.GENERATED -> R.string.filter_generated
+        GridFilter.EDITED -> R.string.filter_edited
+    }
+
+@Composable
+private fun DefaultPaletteBanner(onUseCustomColours: () -> Unit, onDismiss: () -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                stringResource(R.string.grid_default_palette),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Row(modifier = Modifier.align(Alignment.End)) {
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_dismiss)) }
+                TextButton(onClick = onUseCustomColours) { Text(stringResource(R.string.grid_use_custom)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HintCard() {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+    ) {
+        Text(
+            stringResource(R.string.grid_hint),
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(16.dp),
+        )
+    }
+}
