@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.provider.Settings
+import android.os.SystemClock
 import android.util.Log
 import dev.abhay.monopack.R
 import java.io.File
@@ -23,6 +24,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.withContext
 
 /** A saved icon pack to install: its file (a content URI) and label. */
@@ -32,10 +34,20 @@ data class PackToInstall(val uri: String, val title: String, val packageName: St
 sealed interface InstallState {
     data object Idle : InstallState
 
-    data class Installing(val pack: PackToInstall, val update: Boolean) : InstallState
+    /**
+     * Writing or committing [sessionId] (null until the session exists), or waiting for the user on
+     * Android's confirmation screen ([awaitingUser]), which may never report back if they leave it.
+     */
+    data class Installing(
+        val pack: PackToInstall,
+        val update: Boolean,
+        val sessionId: Int? = null,
+        val awaitingUser: Boolean = false,
+        val startedAt: Long = 0,
+    ) : InstallState
 
     /** Android wants the user to confirm (first install, or a pack another app installed). */
-    data class NeedsConfirmation(val pack: PackToInstall, val update: Boolean, val intent: Intent) : InstallState
+    data class NeedsConfirmation(val pack: PackToInstall, val update: Boolean, val intent: Intent, val sessionId: Int?) : InstallState
 
     data class Done(val pack: PackToInstall, val update: Boolean, val success: Boolean, val message: String?) : InstallState
 }
@@ -64,13 +76,17 @@ class PackInstaller(
 
     /** Starts installing [pack] unless an install is under way; progress and the result arrive in [state]. */
     fun install(pack: PackToInstall) {
-        if (_state.value is InstallState.Installing || _state.value is InstallState.NeedsConfirmation) return
+        when (val decision = InstallGate.decide(_state.value, SystemClock.elapsedRealtime())) {
+            InstallGate.Decision.Busy -> return
+            is InstallGate.Decision.Replace -> decision.sessionId?.let { id -> runCatching { context.packageManager.packageInstaller.abandonSession(id) } }
+            InstallGate.Decision.Start -> Unit
+        }
         scope.launch { installNow(pack) }
     }
 
     private suspend fun installNow(pack: PackToInstall) {
         val update = pack.packageName?.let { isInstalled(it) } ?: false
-        _state.value = InstallState.Installing(pack, update)
+        _state.value = InstallState.Installing(pack, update, startedAt = SystemClock.elapsedRealtime())
         catching {
             withContext(Dispatchers.IO) {
                 // Install a private copy, checked first: the library folder is shared storage, so
@@ -106,11 +122,17 @@ class PackInstaller(
             is InstallState.NeedsConfirmation -> current.pack to current.update
             else -> return
         }
+        // A replaced session can still report (e.g. "aborted"); only the current one counts.
+        if (!InstallGate.isCurrent(current, intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1))) return
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
         _state.value = when (status) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                 val confirm = IntentCompat.getParcelableExtra(intent, Intent.EXTRA_INTENT, Intent::class.java)
-                if (confirm == null) InstallState.Done(pack, update, false, "Android didn't ask to confirm") else InstallState.NeedsConfirmation(pack, update, confirm)
+                if (confirm == null) {
+                    InstallState.Done(pack, update, false, "Android didn't ask to confirm")
+                } else {
+                    InstallState.NeedsConfirmation(pack, update, confirm, intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1).takeIf { it >= 0 })
+                }
             }
             PackageInstaller.STATUS_SUCCESS -> InstallState.Done(pack, update, success = true, message = null)
             PackageInstaller.STATUS_FAILURE_ABORTED -> InstallState.Done(pack, update, success = false, message = null)
@@ -121,7 +143,7 @@ class PackInstaller(
     /** The confirmation screen was opened; wait for its result. */
     fun confirmationShown() {
         val current = _state.value as? InstallState.NeedsConfirmation ?: return
-        _state.value = InstallState.Installing(current.pack, current.update)
+        _state.value = InstallState.Installing(current.pack, current.update, current.sessionId, awaitingUser = true, startedAt = SystemClock.elapsedRealtime())
     }
 
     fun dismiss() {
@@ -136,6 +158,7 @@ class PackInstaller(
             packageName?.let(::setAppPackageName)
         }
         val id = installer.createSession(params)
+        _state.update { (it as? InstallState.Installing)?.copy(sessionId = id) ?: it }
         try {
             installer.openSession(id).use { session ->
                 apk.inputStream().use { input ->
@@ -161,6 +184,42 @@ class PackInstaller(
 
     private companion object {
         const val TAG = "Monopack"
+    }
+}
+
+/** Whether a new install may start, given the current one. */
+object InstallGate {
+    sealed interface Decision {
+        data object Start : Decision
+
+        /** Busy writing or committing a session: ignore the tap. */
+        data object Busy : Decision
+
+        /** Abandon the session waiting for the user (they may have left the confirmation) and start. */
+        data class Replace(val sessionId: Int?) : Decision
+    }
+
+    /** Longest an install may hold off new ones without asking the user (a lost callback can't block forever). */
+    const val MAX_BUSY_MS = 2 * 60 * 1000L
+
+    fun decide(state: InstallState, now: Long): Decision = when (state) {
+        is InstallState.NeedsConfirmation -> Decision.Replace(state.sessionId)
+        is InstallState.Installing -> when {
+            state.awaitingUser -> Decision.Replace(state.sessionId)
+            now - state.startedAt > MAX_BUSY_MS -> Decision.Replace(state.sessionId)
+            else -> Decision.Busy
+        }
+        else -> Decision.Start
+    }
+
+    /** Whether a result for [sessionId] belongs to the install in [state]. */
+    fun isCurrent(state: InstallState, sessionId: Int): Boolean {
+        val current = when (state) {
+            is InstallState.Installing -> state.sessionId
+            is InstallState.NeedsConfirmation -> state.sessionId
+            else -> return false
+        }
+        return current == null || sessionId < 0 || current == sessionId
     }
 }
 

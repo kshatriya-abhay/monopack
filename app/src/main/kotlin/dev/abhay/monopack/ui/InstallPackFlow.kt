@@ -52,7 +52,8 @@ fun rememberInstallPackFlow(installer: PackInstaller, onInstalled: () -> Unit = 
 
     LaunchedEffect(state) {
         when (val s = state) {
-            is InstallState.Installing -> if (s.update) Toast.makeText(context, resources.getString(R.string.install_updating, s.pack.title), Toast.LENGTH_SHORT).show()
+            // Once per install: the state is republished with its session and after the confirmation.
+            is InstallState.Installing -> if (s.update && s.sessionId == null && !s.awaitingUser) Toast.makeText(context, resources.getString(R.string.install_updating, s.pack.title), Toast.LENGTH_SHORT).show()
             is InstallState.NeedsConfirmation -> {
                 runCatching { context.startActivity(s.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
                 installer.confirmationShown()
