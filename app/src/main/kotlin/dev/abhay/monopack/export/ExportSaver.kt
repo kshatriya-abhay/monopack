@@ -8,6 +8,9 @@ import android.provider.MediaStore
 import androidx.core.net.toUri
 import dev.abhay.monopack.R
 import java.io.File
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** Where a saved export ended up. */
 data class SavedExport(
@@ -32,8 +35,12 @@ interface ExportSaver {
 }
 
 /** Saves to `Download/Monopack/` through MediaStore (no storage permission needed). */
-class DownloadsSaver(private val context: Context) : ExportSaver {
-    override suspend fun save(file: File, packageName: String?): SavedExport {
+class DownloadsSaver(
+    private val context: Context,
+    /** File copies happen here, never on the caller's (often the main) thread. */
+    private val io: CoroutineDispatcher = Dispatchers.IO,
+) : ExportSaver {
+    override suspend fun save(file: File, packageName: String?): SavedExport = withContext(io) {
         val resolver = context.contentResolver
         // Replace our earlier file of this name (MediaStore would otherwise add "name (1)").
         runCatching {
@@ -64,12 +71,14 @@ class DownloadsSaver(private val context: Context) : ExportSaver {
             if (it.moveToFirst()) it.getString(0) else null
         } ?: file.name
         val absolute = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "$FOLDER/$name")
-        return SavedExport(uri.toString(), "${Environment.DIRECTORY_DOWNLOADS}/$FOLDER/$name", absolute.path)
+        SavedExport(uri.toString(), "${Environment.DIRECTORY_DOWNLOADS}/$FOLDER/$name", absolute.path)
     }
 
     override suspend fun copyTo(file: File, uri: String) {
-        context.contentResolver.openOutputStream(uri.toUri(), "wt")?.use { out -> file.inputStream().use { it.copyTo(out) } }
-            ?: error("Couldn't write to the chosen file")
+        withContext(io) {
+            context.contentResolver.openOutputStream(uri.toUri(), "wt")?.use { out -> file.inputStream().use { it.copyTo(out) } }
+                ?: error("Couldn't write to the chosen file")
+        }
     }
 
     companion object {
