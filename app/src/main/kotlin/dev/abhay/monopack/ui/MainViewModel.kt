@@ -433,9 +433,9 @@ class MainViewModel(
     }
 
     /** Copies an exported file to a document the user picked ("Save as…"). */
-    fun saveCopy(file: ExportedFile, uri: String, onResult: (Boolean) -> Unit) {
+    fun saveCopy(cachePath: String, uri: String, onResult: (Boolean) -> Unit) {
         viewModelScope.launch {
-            val ok = catching { saver.copyTo(File(file.cachePath), uri) }
+            val ok = catching { saver.copyTo(File(cachePath), uri) }
                 .onFailure { Log.w(TAG, "Save as failed", it) }
                 .isSuccess
             onResult(ok)

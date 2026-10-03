@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.os.Environment
+import android.provider.DocumentsContract
 import android.provider.MediaStore
 import androidx.core.net.toUri
 import dev.abhay.monopack.R
@@ -76,8 +77,15 @@ class DownloadsSaver(
 
     override suspend fun copyTo(file: File, uri: String) {
         withContext(io) {
-            context.contentResolver.openOutputStream(uri.toUri(), "wt")?.use { out -> file.inputStream().use { it.copyTo(out) } }
-                ?: error("Couldn't write to the chosen file")
+            try {
+                check(file.exists()) { "${file.name} is gone" }
+                context.contentResolver.openOutputStream(uri.toUri(), "wt")?.use { out -> file.inputStream().use { it.copyTo(out) } }
+                    ?: error("Couldn't write to the chosen file")
+            } catch (e: Exception) {
+                // The picker already created the document; don't leave an empty file behind.
+                runCatching { DocumentsContract.deleteDocument(context.contentResolver, uri.toUri()) }
+                throw e
+            }
         }
     }
 

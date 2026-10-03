@@ -39,4 +39,13 @@ class DownloadsSaverTest {
         assertThat(io.used).isGreaterThan(0)
         assertThat(target.readBytes()).isEqualTo(source.readBytes())
     }
+
+    @Test
+    fun saveAsFailsInsteadOfWritingAnEmptyFileWhenTheExportIsGone() = runBlocking {
+        val dir = createTempDirectory().toFile()
+        val target = File(dir, "copy.apk")
+        val result = runCatching { DownloadsSaver(RuntimeEnvironment.getApplication(), CountingDispatcher()).copyTo(File(dir, "gone.apk"), Uri.fromFile(target).toString()) }
+        assertThat(result.isFailure).isTrue()
+        assertThat(target.exists() && target.length() > 0).isFalse()
+    }
 }

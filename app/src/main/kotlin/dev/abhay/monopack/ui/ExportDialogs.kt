@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -51,7 +52,8 @@ fun ExportDialogs(
     state: ExportState,
     onCancel: () -> Unit,
     onDismiss: () -> Unit,
-    onSaveCopy: (ExportedFile, String, (Boolean) -> Unit) -> Unit,
+    /** Copies the exported file at a cache path to a picked document ("Save as…"). */
+    onSaveCopy: (cachePath: String, uri: String, (Boolean) -> Unit) -> Unit,
     /** Apply icons was started for this file (it becomes the Reapply target). */
     onApplied: (ExportedFile) -> Unit = {},
     /** Hides the progress dialog; the export continues with its notification. */
@@ -63,13 +65,14 @@ fun ExportDialogs(
 ) {
     val context = LocalContext.current
     val resources = LocalResources.current
-    var saving by remember { mutableStateOf<ExportedFile?>(null) }
+    // Saveable: the picker can outlive the activity (rotation, dark mode) or the process.
+    var savingPath by rememberSaveable { mutableStateOf<String?>(null) }
     // The MIME type only suggests an extension; the file name decides it.
     val saveAs = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(DownloadsSaver.MIME_TYPE)) { uri ->
-        val file = saving
-        saving = null
-        if (uri != null && file != null) {
-            onSaveCopy(file, uri.toString()) { ok ->
+        val path = savingPath
+        savingPath = null
+        if (uri != null && path != null) {
+            onSaveCopy(path, uri.toString()) { ok ->
                 Toast.makeText(context, if (ok) resources.getString(R.string.export_saved) else resources.getString(R.string.export_save_failed), Toast.LENGTH_SHORT).show()
             }
         }
@@ -162,7 +165,7 @@ fun ExportDialogs(
                             }) { Text(stringResource(R.string.export_apply_icons)) }
                         }
                         OutlinedButton(onClick = {
-                            saving = file
+                            savingPath = file.cachePath
                             saveAs.launch(file.fileName)
                         }) { Text(stringResource(R.string.export_save_as)) }
                         TextButton(onClick = { context.startActivity(DownloadsSaver.shareIntent(context, file.uri, file.fileName)) }) { Text(stringResource(R.string.action_share)) }
