@@ -4,6 +4,12 @@ Material You themed icons you can fix per app, generated on-device and exported 
 
 _More documentation to come._
 
+## Screenshots
+
+| Your packs | Create | Edit an icon | Export |
+|---|---|---|---|
+| <img src="docs/screenshots/home.jpg" width="200" alt="Home screen listing a saved icon pack, marked Installed"> | <img src="docs/screenshots/create.jpg" width="200" alt="Create screen with a grid of themed icons and filter chips"> | <img src="docs/screenshots/edit-icon.jpg" width="200" alt="Icon editor previewing an icon in light and dark mode next to other apps"> | <img src="docs/screenshots/export.jpg" width="200" alt="Export sheet: icon pack or HyperOS theme, pack name and icon style"> |
+
 ## Disclaimer
 
 The icon packs Monopack makes contain other apps' icons and are meant for your own devices. If you share or distribute pack APKs, that's your responsibility, not that of Monopack's author.
